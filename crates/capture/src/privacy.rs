@@ -37,7 +37,7 @@ pub(crate) fn sanitize_url(raw: &str) -> Option<String> {
     let (scheme, rest) = match before_query.split_once("://") {
         Some((s, r)) => {
             // Validate scheme format
-            if s.chars().next().map_or(false, |c| c.is_ascii_alphabetic())
+            if s.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
                 && s.chars()
                     .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '.' || c == '-')
             {
