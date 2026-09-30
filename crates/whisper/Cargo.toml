@@ -11,3 +11,5 @@ whisper-rs = "0.16"
 
 [dev-dependencies]
 hound = "3.5"
+screenmanual-capture = { path = "../capture" }
+screenmanual-store = { path = "../store" }
