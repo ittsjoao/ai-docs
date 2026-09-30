@@ -72,17 +72,29 @@ impl RecordingHandle for WinHandle {
     }
 
     fn stop(mut self) -> PortResult<StopInfo> {
+        self.finish()
+    }
+}
+
+impl WinHandle {
+    fn finish(&mut self) -> PortResult<StopInfo> {
         if let Some(h) = self.hooks.take() {
             h.stop();
         }
-        let _ = self.tx.send(Raw::Stop { t: now(self.t0) });
         let worker = self
             .worker
             .take()
             .ok_or_else(|| anyhow!("gravação já encerrada"))?;
+        let _ = self.tx.send(Raw::Stop { t: now(self.t0) });
         worker
             .join()
             .map_err(|_| anyhow!("a thread de captura entrou em pânico"))?
+    }
+}
+
+impl Drop for WinHandle {
+    fn drop(&mut self) {
+        let _ = self.finish();
     }
 }
 
@@ -133,9 +145,32 @@ fn run(
     };
     let mut agg = Aggregator::new(probe, cfg, std::process::id());
     write_all(&mut sink, agg.start(), audio.as_ref())?;
+    let end = pump(&rx, &mut agg, &mut sink, audio.as_ref(), t0);
+    drop(agg); // libera o sender de PNG do probe antes de fechar o sink
+    let closed = sink.close();
+    let stopped = match audio {
+        Some(a) => a.stop(),
+        None => Ok(None),
+    };
+    let duration_ms = end?;
+    closed?;
+    let audio_offset_ms = stopped?;
+    Ok(StopInfo {
+        duration_ms,
+        audio_offset_ms,
+    })
+}
+
+fn pump(
+    rx: &Receiver<Raw>,
+    agg: &mut Aggregator<WinProbe>,
+    sink: &mut Sink,
+    audio: Option<&Audio>,
+    t0: Instant,
+) -> anyhow::Result<u64> {
     let mut audio_lost_reported = false;
     let mut last_tick = Instant::now();
-    let end = loop {
+    loop {
         let raw = match rx.recv_timeout(TICK) {
             Ok(raw) => raw,
             Err(RecvTimeoutError::Timeout) => {
@@ -148,35 +183,17 @@ fn run(
             Raw::Stop { t } => Some(t),
             _ => None,
         };
-        write_all(&mut sink, agg.feed(raw), audio.as_ref())?;
-        if !audio_lost_reported && audio.as_ref().is_some_and(Audio::lost) {
-            audio_lost_reported = true;
-            write_all(
-                &mut sink,
-                agg.feed(Raw::AudioLost { t: now(t0) }),
-                audio.as_ref(),
-            )?;
-        }
+        write_all(sink, agg.feed(raw), audio)?;
         if let Some(t) = stop_at {
-            break t;
+            return Ok(t);
+        }
+        if !audio_lost_reported && audio.is_some_and(Audio::lost) {
+            audio_lost_reported = true;
+            write_all(sink, agg.feed(Raw::AudioLost { t: now(t0) }), audio)?;
         }
         if last_tick.elapsed() >= TICK {
             last_tick = Instant::now();
-            write_all(
-                &mut sink,
-                agg.feed(Raw::Tick { t: now(t0) }),
-                audio.as_ref(),
-            )?;
+            write_all(sink, agg.feed(Raw::Tick { t: now(t0) }), audio)?;
         }
-    };
-    drop(agg); // libera o sender de PNG do probe antes de fechar o sink
-    sink.close()?;
-    let audio_offset_ms = match audio {
-        Some(a) => a.stop()?,
-        None => None,
-    };
-    Ok(StopInfo {
-        duration_ms: end,
-        audio_offset_ms,
-    })
+    }
 }
