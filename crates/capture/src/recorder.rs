@@ -144,8 +144,8 @@ fn run(
         }
     };
     let mut agg = Aggregator::new(probe, cfg, std::process::id());
-    write_all(&mut sink, agg.start(), audio.as_ref())?;
-    let end = pump(&rx, &mut agg, &mut sink, audio.as_ref(), t0);
+    let end = write_all(&mut sink, agg.start(), audio.as_ref())
+        .and_then(|_| pump(&rx, &mut agg, &mut sink, audio.as_ref(), t0));
     drop(agg); // libera o sender de PNG do probe antes de fechar o sink
     let closed = sink.close();
     let stopped = match audio {
