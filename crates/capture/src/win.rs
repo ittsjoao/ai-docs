@@ -210,7 +210,6 @@ impl Probe for WinProbe {
     fn screenshot(&mut self, t: u64, x: i32, y: i32, black: Option<Rect>) -> Option<Shot> {
         let monitor = xcap::Monitor::from_point(x, y).ok()?;
         let (mx, my) = (monitor.x().ok()?, monitor.y().ok()?);
-        let (w, h) = (monitor.width().ok()? as i32, monitor.height().ok()? as i32);
         let mut img = monitor.capture_image().ok()?;
         if let Some(r) = black {
             blackout(
@@ -225,6 +224,7 @@ impl Probe for WinProbe {
         }
         let hash = dhash(&img);
         let rel = format!("shots/{t:08}.png");
+        let (w, h) = (img.width() as i32, img.height() as i32);
         let _ = self.png.send((self.dir.join(&rel), img));
         Some(Shot {
             path: rel,
