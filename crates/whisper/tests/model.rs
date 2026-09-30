@@ -1,6 +1,8 @@
 //! Modelo real (não roda no CI). Usa o modelo e a narração do spike:
-//! $env:SCREENMANUAL_MODEL = "spike_out\models\ggml-large-v3-turbo-q5_0.bin"
-//! $env:SCREENMANUAL_WAV = "spike_out\narracao2.wav"
+//! Rode da raiz do repositório com caminhos absolutos: o binário de teste roda com o
+//! diretório do crate como cwd, então caminhos relativos não são encontrados.
+//! $env:SCREENMANUAL_MODEL = "$PWD\spike_out\models\ggml-large-v3-turbo-q5_0.bin"
+//! $env:SCREENMANUAL_WAV = "$PWD\spike_out\narracao2.wav"
 //! cargo test -p screenmanual-whisper --release -- --ignored --nocapture
 use std::path::{Path, PathBuf};
 

@@ -11,12 +11,12 @@ const RATE: u32 = 16_000;
 /// Menos que meio segundo de áudio não tem o que transcrever.
 const MIN_SAMPLES: usize = RATE as usize / 2;
 
-/// Segmento como o whisper devolve: tempos em centésimos de segundo e tokens (texto, t0, t1).
+/// Segmento como o whisper devolve: tempos em centésimos de segundo e tokens (bytes, t0, t1).
 pub(crate) struct RawSegment {
     pub start_cs: i64,
     pub end_cs: i64,
     pub text: String,
-    pub tokens: Vec<(String, i64, i64)>,
+    pub tokens: Vec<(Vec<u8>, i64, i64)>,
 }
 
 pub struct WhisperTranscriber {
@@ -48,23 +48,27 @@ fn cs_to_ms(cs: i64) -> u64 {
 }
 
 /// Junta tokens em palavras: uma palavra nova começa em token com espaço inicial (spec §6.1.4).
-pub(crate) fn words(tokens: &[(String, i64, i64)]) -> Vec<Word> {
-    let mut out: Vec<Word> = Vec::new();
-    for (text, t0, t1) in tokens {
-        match out.last_mut() {
-            Some(w) if !text.starts_with(' ') => {
-                w.w.push_str(text);
-                w.e = cs_to_ms(*t1);
+/// Acumula bytes e decodifica uma vez por palavra: um token BPE pode trazer só parte de um
+/// caractere UTF-8 multibyte.
+pub(crate) fn words(tokens: &[(Vec<u8>, i64, i64)]) -> Vec<Word> {
+    let mut raw: Vec<(Vec<u8>, u64, u64)> = Vec::new();
+    for (bytes, t0, t1) in tokens {
+        match raw.last_mut() {
+            Some(w) if bytes.first() != Some(&b' ') => {
+                w.0.extend_from_slice(bytes);
+                w.2 = cs_to_ms(*t1);
             }
-            _ => out.push(Word {
-                w: text.trim_start().to_string(),
-                s: cs_to_ms(*t0),
-                e: cs_to_ms(*t1),
-            }),
+            _ => raw.push((bytes.clone(), cs_to_ms(*t0), cs_to_ms(*t1))),
         }
     }
-    out.retain(|w| !w.w.trim().is_empty());
-    out
+    raw.into_iter()
+        .map(|(bytes, s, e)| Word {
+            w: String::from_utf8_lossy(&bytes).trim().to_string(),
+            s,
+            e,
+        })
+        .filter(|w| !w.w.is_empty())
+        .collect()
 }
 
 /// Converte para ms, descarta segmento vazio ou em silêncio (RMS abaixo de `min_rms`).
@@ -142,9 +146,7 @@ impl Transcriber for WhisperTranscriber {
                     .map(|tk| {
                         let d = tk.token_data();
                         (
-                            tk.to_str_lossy()
-                                .map(|s| s.into_owned())
-                                .unwrap_or_default(),
+                            tk.to_bytes().map(|b| b.to_vec()).unwrap_or_default(),
                             d.t0,
                             d.t1,
                         )
@@ -160,8 +162,8 @@ impl Transcriber for WhisperTranscriber {
 mod tests {
     use super::*;
 
-    fn tok(text: &str, t0: i64, t1: i64) -> (String, i64, i64) {
-        (text.to_string(), t0, t1)
+    fn tok(text: &str, t0: i64, t1: i64) -> (Vec<u8>, i64, i64) {
+        (text.as_bytes().to_vec(), t0, t1)
     }
 
     #[test]
@@ -179,6 +181,17 @@ mod tests {
             got,
             vec![("Clique", 0, 500), ("em", 500, 600), ("Nova,", 600, 910)]
         );
+    }
+
+    #[test]
+    fn multibyte_char_split_across_tokens_is_not_corrupted() {
+        let w = words(&[
+            (b" a\xC3".to_vec(), 0, 10),
+            (b"\xA7\xC3\xA3o".to_vec(), 10, 20),
+        ]);
+        assert_eq!(w.len(), 1);
+        assert_eq!(w[0].w, "ação");
+        assert!(!w[0].w.contains('\u{FFFD}'));
     }
 
     #[test]
