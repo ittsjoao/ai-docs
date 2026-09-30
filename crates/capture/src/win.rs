@@ -261,6 +261,10 @@ impl Probe for WinProbe {
                 control_type,
                 Some(ControlType::Edit | ControlType::ComboBox)
             ) {
+                // Ignora a barra enquanto tem foco porque seu valor é o texto digitado, não a URL.
+                if el.has_keyboard_focus().unwrap_or(false) {
+                    return None;
+                }
                 if let Ok(value) = el
                     .get_pattern::<UIValuePattern>()
                     .and_then(|p| p.get_value())
