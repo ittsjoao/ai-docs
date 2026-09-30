@@ -30,11 +30,26 @@ pub(crate) fn sanitize_url(raw: &str) -> Option<String> {
     if raw.is_empty() || raw.contains(char::is_whitespace) {
         return None;
     }
-    let (scheme, rest) = match raw.split_once("://") {
-        Some((s, r)) => (s.to_lowercase(), r),
-        None => ("https".to_string(), raw),
+    // Cut query/fragment first to avoid leaking them when parsing schemeless URLs
+    let before_query = raw.split(['?', '#']).next().unwrap_or("");
+
+    // Try to extract scheme, validating it matches [A-Za-z][A-Za-z0-9+.-]*
+    let (scheme, rest) = match before_query.split_once("://") {
+        Some((s, r)) => {
+            // Validate scheme format
+            if s.chars().next().map_or(false, |c| c.is_ascii_alphabetic())
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '.' || c == '-')
+            {
+                (s.to_lowercase(), r)
+            } else {
+                // Invalid scheme, treat whole thing as schemeless
+                ("https".to_string(), before_query)
+            }
+        }
+        None => ("https".to_string(), before_query),
     };
-    let rest = rest.split(['?', '#']).next().unwrap_or("");
+
     let (authority, path) = match rest.find('/') {
         Some(i) => (&rest[..i], &rest[i..]),
         None => (rest, ""),
@@ -50,7 +65,6 @@ pub(crate) fn sanitize_url(raw: &str) -> Option<String> {
 mod tests {
     use super::*;
     use image::Rgba;
-    use screenmanual_core::domain::{CaptureConfig, Rect};
 
     #[test]
     fn denylist_matches_exe_and_title_words_case_insensitive() {
@@ -111,6 +125,11 @@ mod tests {
             sanitize_url("Pesquisar no Google ou digitar URL"),
             None,
             "placeholder da barra vazia"
+        );
+        // Regression: query should not leak when it contains another URL
+        assert_eq!(
+            sanitize_url("google.com/login?next=https://evil.com/a").as_deref(),
+            Some("https://google.com/login")
         );
     }
 }
