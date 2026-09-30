@@ -1,12 +1,11 @@
 mod group;
 mod speech;
+mod flags;
 #[cfg(test)]
 mod test_util;
 
 use crate::domain::{BuildConfig, Candidate, CropSpec, Event, Segment};
 
-// removido na Task 6, quando add_flag passa a ser usado
-#[allow(unused_imports)]
 pub(crate) use group::{add_flag, Draft};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -18,5 +17,6 @@ pub struct BuildOutput {
 pub fn build(events: &[Event], speech: &[Segment], cfg: &BuildConfig) -> BuildOutput {
     let mut drafts = group::group(events, cfg);
     speech::assign_speech(&mut drafts, speech, cfg.lead_ms);
+    flags::apply_flags(&mut drafts, cfg);
     BuildOutput { candidates: drafts.into_iter().map(|d| d.cand).collect(), crops: vec![] }
 }
