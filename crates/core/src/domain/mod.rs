@@ -5,6 +5,7 @@ mod event;
 mod manual;
 mod publish;
 mod session;
+mod status;
 mod transcript;
 
 pub use candidate::*;
@@ -14,4 +15,5 @@ pub use event::*;
 pub use manual::*;
 pub use publish::*;
 pub use session::*;
+pub use status::*;
 pub use transcript::*;
