@@ -228,12 +228,18 @@ impl SessionStore for FsStore {
 
     fn save_rendered(&self, id: &str, rendered: &Rendered) -> Result<()> {
         let dir = self.dir(id);
+        // Validate all paths first before copying anything (atomic validation)
+        let mut copies = Vec::new();
         for img in &rendered.images {
             let (from, to) = (inside(&dir, &img.from)?, inside(&dir, &img.to)?);
+            copies.push((from, to));
+        }
+        // Now copy all images
+        for (from, to) in copies {
             if let Some(parent) = to.parent() {
                 fs::create_dir_all(parent)?;
             }
-            fs::copy(&from, &to).with_context(|| format!("crop ausente: {}", img.from))?;
+            fs::copy(&from, &to).with_context(|| format!("crop ausente: {}", from.display()))?;
         }
         write_atomic(&dir.join(MANUAL_MD), rendered.markdown.as_bytes())
     }
@@ -496,7 +502,8 @@ mod tests {
             "/etc/passwd",
             "",
         ] {
-            assert!(store.read_file("s", bad).is_err(), "{bad}");
+            let err = store.read_file("s", bad).unwrap_err().to_string();
+            assert!(err.contains("fora da pasta"), "{bad}: {err}");
         }
         let missing = Rendered {
             markdown: String::new(),
@@ -510,6 +517,23 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("crops/c999.png"));
+        // Test that save_rendered with bad 'to' path rejects and leaves no trace
+        let bad_to = Rendered {
+            markdown: String::new(),
+            images: vec![ImageCopy {
+                from: "crops/c001.png".into(),
+                to: "../fora.png".into(),
+            }],
+        };
+        let err = store.save_rendered("s", &bad_to).unwrap_err().to_string();
+        assert!(
+            err.contains("fora da pasta"),
+            "save_rendered with bad 'to': {err}"
+        );
+        assert!(
+            !root.join("fora.png").exists(),
+            "bad path should not create files outside session"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
