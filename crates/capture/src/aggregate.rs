@@ -57,6 +57,10 @@ pub(crate) struct Probed {
     pub el: Element,
     pub pid: u32,
     pub root_class: String,
+    /// Exe da janela raiz sob o ponto, em minúsculas.
+    pub app: String,
+    /// Título da janela raiz sob o ponto.
+    pub title: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -174,6 +178,8 @@ impl<P: Probe> Aggregator<P> {
                 if !self.paused_manual {
                     self.flush_typing(&mut out);
                     self.paused_manual = true;
+                    self.pending = None;
+                    self.ignored_button = None;
                     if !self.paused_auto {
                         out.push(Event::Pause {
                             t,
@@ -220,6 +226,8 @@ impl<P: Probe> Aggregator<P> {
         let deny = denied(&fg.app, &fg.title, &self.cfg);
         if deny && !self.paused_auto {
             self.paused_auto = true;
+            self.pending = None;
+            self.ignored_button = None;
             out.push(Event::Pause {
                 t,
                 reason: PauseReason::Auto,
@@ -249,6 +257,14 @@ impl<P: Probe> Aggregator<P> {
         if probed.as_ref().is_some_and(|p| {
             p.pid == self.own_pid || SHELL_CLASSES.contains(&p.root_class.as_str())
         }) {
+            self.ignored_button = Some(button);
+            return;
+        }
+        // O hook do mouse dispara antes de o foco mudar: confere a janela sob o clique.
+        if probed
+            .as_ref()
+            .is_some_and(|p| denied(&p.app, &p.title, &self.cfg))
+        {
             self.ignored_button = Some(button);
             return;
         }
@@ -412,6 +428,8 @@ mod tests {
             el,
             pid,
             root_class: root_class.into(),
+            app: "erp.exe".into(),
+            title: "ERP".into(),
         })
     }
 
@@ -620,6 +638,76 @@ mod tests {
         assert_eq!(
             a.feed(Raw::Stop { t: 200 }),
             vec![Event::SessionEnd { t: 200 }]
+        );
+    }
+
+    #[test]
+    fn first_click_on_denied_window_still_in_background_is_not_recorded() {
+        let mut a = agg();
+        a.start();
+        let mut p = probed("Entrada", 20, "KPWnd", false).unwrap();
+        p.app = "keepass.exe".into();
+        p.title = "Cofre".into();
+        a.probe_mut().at = Some(p);
+        assert!(click(&mut a, 1000).is_empty());
+        assert!(a.probe_mut().shots.is_empty());
+    }
+
+    #[test]
+    fn pause_between_down_and_up_drops_the_click() {
+        let mut a = agg();
+        a.start();
+        assert!(a
+            .feed(Raw::MouseDown {
+                t: 100,
+                x: 200,
+                y: 115,
+                button: MouseButton::Left
+            })
+            .is_empty());
+        assert_eq!(
+            a.feed(Raw::Pause { t: 150 }),
+            vec![Event::Pause {
+                t: 150,
+                reason: PauseReason::Manual
+            }]
+        );
+        assert!(a
+            .feed(Raw::MouseUp {
+                t: 180,
+                x: 205,
+                y: 115,
+                button: MouseButton::Left
+            })
+            .is_empty());
+    }
+
+    #[test]
+    fn overlapping_manual_and_auto_pause() {
+        let mut a = agg();
+        a.start();
+        a.probe_mut().fg = fg("keepass.exe", "Cofre", 20);
+        assert_eq!(
+            a.feed(Raw::Tick { t: 100 }),
+            vec![Event::Pause {
+                t: 100,
+                reason: PauseReason::Auto
+            }]
+        );
+        assert!(a.feed(Raw::Pause { t: 200 }).is_empty());
+        assert!(a.feed(Raw::Resume { t: 300 }).is_empty());
+        a.probe_mut().fg = fg("erp.exe", "ERP", 10);
+        assert_eq!(
+            a.feed(Raw::Tick { t: 400 }),
+            vec![
+                Event::Resume { t: 400 },
+                Event::Window {
+                    t: 400,
+                    app: "erp.exe".into(),
+                    title: "ERP".into(),
+                    url: None
+                }
+            ]
         );
     }
 
