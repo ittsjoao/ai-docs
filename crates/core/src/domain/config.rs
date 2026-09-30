@@ -43,10 +43,17 @@ pub struct CaptureConfig {
 impl Default for CaptureConfig {
     fn default() -> Self {
         Self {
-            deny_processes: ["keepass.exe", "keepassxc.exe", "bitwarden.exe", "1password.exe"]
+            deny_processes: [
+                "keepass.exe",
+                "keepassxc.exe",
+                "bitwarden.exe",
+                "1password.exe",
+            ]
+            .map(String::from)
+            .to_vec(),
+            deny_title_words: ["senha", "password", "internet banking"]
                 .map(String::from)
                 .to_vec(),
-            deny_title_words: ["senha", "password", "internet banking"].map(String::from).to_vec(),
         }
     }
 }

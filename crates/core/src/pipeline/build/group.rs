@@ -62,24 +62,49 @@ fn push(drafts: &mut Vec<Draft>, mut d: Draft, after_auto_pause: &mut bool) {
 
 pub(crate) fn group(events: &[Event], cfg: &BuildConfig) -> Vec<Draft> {
     let mut drafts: Vec<Draft> = Vec::new();
-    let mut ctx = Ctx { app: String::new(), window: String::new(), url: None };
+    let mut ctx = Ctx {
+        app: String::new(),
+        window: String::new(),
+        url: None,
+    };
     let mut window_has_shot = false;
     let mut after_auto_pause = false;
 
     for ev in events {
         match ev {
             Event::Window { t, app, title, url } => {
-                ctx = Ctx { app: app.clone(), window: title.clone(), url: url.clone() };
+                ctx = Ctx {
+                    app: app.clone(),
+                    window: title.clone(),
+                    url: url.clone(),
+                };
                 window_has_shot = false;
                 let caused_by_click = drafts.last().is_some_and(|d| {
-                    matches!(d.cand.kind, CandidateKind::Click | CandidateKind::DoubleClick)
-                        && t.saturating_sub(d.cand.t) <= cfg.switch_after_click_ms
+                    matches!(
+                        d.cand.kind,
+                        CandidateKind::Click | CandidateKind::DoubleClick
+                    ) && t.saturating_sub(d.cand.t) <= cfg.switch_after_click_ms
                 });
                 if !caused_by_click {
-                    push(&mut drafts, new_draft(*t, CandidateKind::Switch, &ctx, None), &mut after_auto_pause);
+                    push(
+                        &mut drafts,
+                        new_draft(*t, CandidateKind::Switch, &ctx, None),
+                        &mut after_auto_pause,
+                    );
                 }
             }
-            Event::Click { t, x, y, up_x, up_y, shot, dhash, el, monitor, .. } => {
+            Event::Click {
+                t,
+                x,
+                y,
+                up_x,
+                up_y,
+                shot,
+                dhash,
+                el,
+                monitor,
+                ..
+            } => {
                 if let Some(prev) = drafts.last_mut() {
                     if prev.cand.kind == CandidateKind::Click
                         && t.saturating_sub(prev.cand.t) <= cfg.double_click_ms
@@ -89,7 +114,11 @@ pub(crate) fn group(events: &[Event], cfg: &BuildConfig) -> Vec<Draft> {
                         continue;
                     }
                 }
-                let kind = if dist((*x, *y), (*up_x, *up_y)) > cfg.drag_px { CandidateKind::Drag } else { CandidateKind::Click };
+                let kind = if dist((*x, *y), (*up_x, *up_y)) > cfg.drag_px {
+                    CandidateKind::Drag
+                } else {
+                    CandidateKind::Click
+                };
                 let mut d = new_draft(*t, kind, &ctx, el.clone());
                 d.shot = shot.clone();
                 d.dhash = *dhash;
@@ -99,25 +128,42 @@ pub(crate) fn group(events: &[Event], cfg: &BuildConfig) -> Vec<Draft> {
                 window_has_shot |= d.first_in_window;
                 push(&mut drafts, d, &mut after_auto_pause);
             }
-            Event::Type { t, el, chars, password } => {
+            Event::Type {
+                t,
+                el,
+                chars,
+                password,
+            } => {
                 if let Some(prev) = drafts.last_mut() {
                     let same = matches!((&prev.cand.el, el), (Some(a), Some(b)) if a.same_as(b));
-                    let mergeable = matches!(prev.cand.kind, CandidateKind::Click | CandidateKind::DoubleClick | CandidateKind::Fill);
+                    let mergeable = matches!(
+                        prev.cand.kind,
+                        CandidateKind::Click | CandidateKind::DoubleClick | CandidateKind::Fill
+                    );
                     if same && mergeable {
                         prev.cand.kind = CandidateKind::Fill;
-                        let input = prev.cand.input.get_or_insert(Input { chars: 0, password: false });
+                        let input = prev.cand.input.get_or_insert(Input {
+                            chars: 0,
+                            password: false,
+                        });
                         input.chars += *chars;
                         input.password |= *password;
                         continue;
                     }
                 }
                 let mut d = new_draft(*t, CandidateKind::Fill, &ctx, el.clone());
-                d.cand.input = Some(Input { chars: *chars, password: *password });
+                d.cand.input = Some(Input {
+                    chars: *chars,
+                    password: *password,
+                });
                 push(&mut drafts, d, &mut after_auto_pause);
             }
             Event::Key { t, combo } => {
                 if let Some(prev) = drafts.last_mut() {
-                    if prev.cand.kind == CandidateKind::Fill && prev.cand.keys.is_empty() && (combo == "Enter" || combo == "Tab") {
+                    if prev.cand.kind == CandidateKind::Fill
+                        && prev.cand.keys.is_empty()
+                        && (combo == "Enter" || combo == "Tab")
+                    {
                         prev.cand.keys.push(combo.clone());
                         continue;
                     }
@@ -131,7 +177,10 @@ pub(crate) fn group(events: &[Event], cfg: &BuildConfig) -> Vec<Draft> {
                     add_flag(&mut prev.cand, Flag::Important);
                 }
             }
-            Event::Pause { reason: PauseReason::Auto, .. } => after_auto_pause = true,
+            Event::Pause {
+                reason: PauseReason::Auto,
+                ..
+            } => after_auto_pause = true,
             _ => {}
         }
     }
@@ -153,9 +202,22 @@ mod tests {
     #[test]
     fn click_type_enter_become_one_fill() {
         let cfg = BuildConfig::default();
-        let d = group(&[click(1000, 200, 115, Some(field("CNPJ"))), typ(2000, field("CNPJ"), 14), key(2100, "Enter")], &cfg);
+        let d = group(
+            &[
+                click(1000, 200, 115, Some(field("CNPJ"))),
+                typ(2000, field("CNPJ"), 14),
+                key(2100, "Enter"),
+            ],
+            &cfg,
+        );
         assert_eq!(kinds(&d), vec![CandidateKind::Fill]);
-        assert_eq!(d[0].cand.input, Some(Input { chars: 14, password: false }));
+        assert_eq!(
+            d[0].cand.input,
+            Some(Input {
+                chars: 14,
+                password: false
+            })
+        );
         assert_eq!(d[0].cand.keys, vec!["Enter".to_string()]);
         assert!(d[0].shot.is_some(), "fill herda o print do clique");
     }
@@ -163,7 +225,15 @@ mod tests {
     #[test]
     fn typing_in_another_field_after_tab_is_new_fill() {
         let cfg = BuildConfig::default();
-        let d = group(&[click(1000, 200, 115, Some(field("CNPJ"))), typ(2000, field("CNPJ"), 14), key(2100, "Tab"), typ(3000, field("Nome"), 20)], &cfg);
+        let d = group(
+            &[
+                click(1000, 200, 115, Some(field("CNPJ"))),
+                typ(2000, field("CNPJ"), 14),
+                key(2100, "Tab"),
+                typ(3000, field("Nome"), 20),
+            ],
+            &cfg,
+        );
         assert_eq!(kinds(&d), vec![CandidateKind::Fill, CandidateKind::Fill]);
         assert_eq!(d[0].cand.keys, vec!["Tab".to_string()]);
         assert!(d[1].shot.is_none());
@@ -172,9 +242,15 @@ mod tests {
     #[test]
     fn double_click_and_separate_clicks() {
         let cfg = BuildConfig::default();
-        let d = group(&[click(1000, 500, 500, None), click(1300, 502, 501, None)], &cfg);
+        let d = group(
+            &[click(1000, 500, 500, None), click(1300, 502, 501, None)],
+            &cfg,
+        );
         assert_eq!(kinds(&d), vec![CandidateKind::DoubleClick]);
-        let d = group(&[click(1000, 500, 500, None), click(1700, 500, 500, None)], &cfg);
+        let d = group(
+            &[click(1000, 500, 500, None), click(1700, 500, 500, None)],
+            &cfg,
+        );
         assert_eq!(kinds(&d), vec![CandidateKind::Click, CandidateKind::Click]);
     }
 
@@ -182,7 +258,28 @@ mod tests {
     fn far_mouse_up_is_drag() {
         let cfg = BuildConfig::default();
         let ev = match click(1000, 100, 100, None) {
-            Event::Click { t, button, x, y, shot, dhash, el, monitor, .. } => Event::Click { t, button, x, y, up_x: 150, up_y: 100, shot, dhash, el, monitor },
+            Event::Click {
+                t,
+                button,
+                x,
+                y,
+                shot,
+                dhash,
+                el,
+                monitor,
+                ..
+            } => Event::Click {
+                t,
+                button,
+                x,
+                y,
+                up_x: 150,
+                up_y: 100,
+                shot,
+                dhash,
+                el,
+                monitor,
+            },
             _ => unreachable!(),
         };
         assert_eq!(kinds(&group(&[ev], &cfg)), vec![CandidateKind::Drag]);
@@ -195,7 +292,10 @@ mod tests {
         assert_eq!(kinds(&d), vec![CandidateKind::Click, CandidateKind::Switch]);
         let d = group(&[click(1000, 1, 1, None), win(1200, "Outra")], &cfg);
         assert_eq!(kinds(&d), vec![CandidateKind::Click]);
-        assert_eq!(d[0].cand.window, "", "a janela vale para os candidatos seguintes");
+        assert_eq!(
+            d[0].cand.window, "",
+            "a janela vale para os candidatos seguintes"
+        );
     }
 
     #[test]
@@ -205,7 +305,10 @@ mod tests {
             &[
                 click(1000, 1, 1, None),
                 Event::Marker { t: 1500 },
-                Event::Pause { t: 2000, reason: PauseReason::Auto },
+                Event::Pause {
+                    t: 2000,
+                    reason: PauseReason::Auto,
+                },
                 Event::Resume { t: 5000 },
                 click(6000, 900, 900, None),
             ],
@@ -218,7 +321,14 @@ mod tests {
     #[test]
     fn ids_windows_and_first_in_window() {
         let cfg = BuildConfig::default();
-        let d = group(&[win(0, "ERP"), click(1000, 1, 1, None), click(3000, 900, 900, None)], &cfg);
+        let d = group(
+            &[
+                win(0, "ERP"),
+                click(1000, 1, 1, None),
+                click(3000, 900, 900, None),
+            ],
+            &cfg,
+        );
         let ids: Vec<&str> = d.iter().map(|d| d.cand.id.as_str()).collect();
         assert_eq!(ids, vec!["c001", "c002", "c003"]);
         assert_eq!(d[1].cand.window, "ERP");

@@ -14,7 +14,9 @@ pub fn strip_frontmatter(md: &str) -> &str {
 /// Remove o `# título` inicial (o Outline guarda o título à parte) e as linhas em branco seguintes.
 pub fn strip_title(md: &str) -> &str {
     match md.strip_prefix("# ") {
-        Some(rest) => rest.split_once('\n').map_or("", |(_, tail)| tail.trim_start_matches('\n')),
+        Some(rest) => rest
+            .split_once('\n')
+            .map_or("", |(_, tail)| tail.trim_start_matches('\n')),
         None => md,
     }
 }
@@ -22,7 +24,10 @@ pub fn strip_title(md: &str) -> &str {
 pub fn rewrite_images(md: &str, map: &BTreeMap<String, String>) -> String {
     let mut out = md.to_string();
     for (path, attachment) in map {
-        out = out.replace(&format!("]({path})"), &format!("]({ATTACHMENT_PREFIX}{attachment})"));
+        out = out.replace(
+            &format!("]({path})"),
+            &format!("]({ATTACHMENT_PREFIX}{attachment})"),
+        );
     }
     out
 }
@@ -32,7 +37,10 @@ pub fn extract_attachment_ids(md: &str) -> Vec<String> {
     let mut rest = md;
     while let Some(pos) = rest.find(ATTACHMENT_PREFIX) {
         rest = &rest[pos + ATTACHMENT_PREFIX.len()..];
-        let id: String = rest.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
+        let id: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
+            .collect();
         if !id.is_empty() && !ids.contains(&id) {
             ids.push(id);
         }
@@ -52,7 +60,10 @@ mod tests {
     #[test]
     fn strips_leading_frontmatter_only() {
         assert_eq!(strip_frontmatter("---\nsessao: s1\n---\n\n# T\n"), "# T\n");
-        assert_eq!(strip_frontmatter("# T\n---\nx\n---\n"), "# T\n---\nx\n---\n");
+        assert_eq!(
+            strip_frontmatter("# T\n---\nx\n---\n"),
+            "# T\n---\nx\n---\n"
+        );
     }
 
     #[test]
@@ -66,7 +77,10 @@ mod tests {
     #[test]
     fn rewrites_image_links_to_attachments() {
         let map = BTreeMap::from([("img/c001.png".to_string(), "abc-123".to_string())]);
-        assert_eq!(rewrite_images("![P](img/c001.png)", &map), "![P](/api/attachments.redirect?id=abc-123)");
+        assert_eq!(
+            rewrite_images("![P](img/c001.png)", &map),
+            "![P](/api/attachments.redirect?id=abc-123)"
+        );
     }
 
     #[test]
@@ -77,6 +91,9 @@ mod tests {
 
     #[test]
     fn sha256_is_lowercase_hex() {
-        assert_eq!(sha256_hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 }

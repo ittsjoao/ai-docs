@@ -29,7 +29,11 @@ pub fn start_recording<S: SessionStore, R: Recorder>(
     Ok((id, handle))
 }
 
-pub fn stop_recording<S: SessionStore, H: RecordingHandle>(store: &S, id: &str, handle: H) -> CommandResult<()> {
+pub fn stop_recording<S: SessionStore, H: RecordingHandle>(
+    store: &S,
+    id: &str,
+    handle: H,
+) -> CommandResult<()> {
     let info = handle.stop()?;
     let mut meta = store.meta(id)?;
     meta.duration_ms = Some(info.duration_ms);

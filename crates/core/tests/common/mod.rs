@@ -57,7 +57,9 @@ impl SessionStore for FakeStore {
         Ok(())
     }
     fn meta(&self, id: &str) -> Result<SessionMeta> {
-        self.get(id).meta.ok_or_else(|| anyhow!("session.json ausente"))
+        self.get(id)
+            .meta
+            .ok_or_else(|| anyhow!("session.json ausente"))
     }
     fn save_meta(&self, meta: &SessionMeta) -> Result<()> {
         self.create(meta)
@@ -66,7 +68,10 @@ impl SessionStore for FakeStore {
         Ok(self.get(id).events)
     }
     fn audio_path(&self, id: &str) -> Result<Option<PathBuf>> {
-        Ok(self.get(id).has_audio.then(|| PathBuf::from(id).join("audio.wav")))
+        Ok(self
+            .get(id)
+            .has_audio
+            .then(|| PathBuf::from(id).join("audio.wav")))
     }
     fn transcript(&self, id: &str) -> Result<Option<Vec<Segment>>> {
         Ok(self.get(id).transcript)
@@ -76,7 +81,9 @@ impl SessionStore for FakeStore {
         Ok(())
     }
     fn candidates(&self, id: &str) -> Result<Vec<Candidate>> {
-        self.get(id).candidates.ok_or_else(|| anyhow!("candidates.json ausente"))
+        self.get(id)
+            .candidates
+            .ok_or_else(|| anyhow!("candidates.json ausente"))
     }
     fn save_candidates(&self, id: &str, candidates: &[Candidate]) -> Result<()> {
         self.edit(id, |s| s.candidates = Some(candidates.to_vec()));
@@ -88,7 +95,11 @@ impl SessionStore for FakeStore {
     fn save_rendered(&self, id: &str, rendered: &Rendered) -> Result<()> {
         self.edit(id, |s| -> Result<()> {
             for img in &rendered.images {
-                let bytes = s.files.get(&img.from).cloned().ok_or_else(|| anyhow!("crop ausente: {}", img.from))?;
+                let bytes = s
+                    .files
+                    .get(&img.from)
+                    .cloned()
+                    .ok_or_else(|| anyhow!("crop ausente: {}", img.from))?;
                 s.files.insert(img.to.clone(), bytes);
             }
             s.markdown = Some(rendered.markdown.clone());
@@ -96,10 +107,16 @@ impl SessionStore for FakeStore {
         })
     }
     fn read_file(&self, id: &str, rel: &str) -> Result<Vec<u8>> {
-        self.get(id).files.get(rel).cloned().ok_or_else(|| anyhow!("arquivo ausente: {rel}"))
+        self.get(id)
+            .files
+            .get(rel)
+            .cloned()
+            .ok_or_else(|| anyhow!("arquivo ausente: {rel}"))
     }
     fn save_published(&self, id: &str, markdown: &str, images: &[(String, Vec<u8>)]) -> Result<()> {
-        self.edit(id, |s| s.published = Some((markdown.to_string(), images.to_vec())));
+        self.edit(id, |s| {
+            s.published = Some((markdown.to_string(), images.to_vec()))
+        });
         Ok(())
     }
     fn publish_state(&self, id: &str) -> Result<Option<PublishState>> {
@@ -116,7 +133,10 @@ impl SessionStore for FakeStore {
     fn facts(&self, id: &str) -> Result<SessionFacts> {
         let s = self.get(id);
         Ok(SessionFacts {
-            ended: s.events.iter().any(|e| matches!(e, Event::SessionEnd { .. })),
+            ended: s
+                .events
+                .iter()
+                .any(|e| matches!(e, Event::SessionEnd { .. })),
             has_candidates: s.candidates.is_some(),
             publish: s.publish,
             error: s.error,
@@ -135,10 +155,16 @@ pub struct FakeTranscriber {
 
 impl FakeTranscriber {
     pub fn ok(out: Vec<Segment>) -> Self {
-        Self { out: Ok(out), prompts: Mutex::default() }
+        Self {
+            out: Ok(out),
+            prompts: Mutex::default(),
+        }
     }
     pub fn failing(msg: &str) -> Self {
-        Self { out: Err(msg.to_string()), prompts: Mutex::default() }
+        Self {
+            out: Err(msg.to_string()),
+            prompts: Mutex::default(),
+        }
     }
     pub fn calls(&self) -> usize {
         self.prompts.lock().unwrap().len()
@@ -171,15 +197,31 @@ pub struct FakeAgent {
 
 impl FakeAgent {
     pub fn ok() -> Self {
-        Self { result: Ok(AgentResult { url: "https://wiki/doc/doc-1".into(), revision: 2, rodadas: 1, validacao: vec![] }), modes: Mutex::default() }
+        Self {
+            result: Ok(AgentResult {
+                url: "https://wiki/doc/doc-1".into(),
+                revision: 2,
+                rodadas: 1,
+                validacao: vec![],
+            }),
+            modes: Mutex::default(),
+        }
     }
     pub fn failing(msg: &str) -> Self {
-        Self { result: Err(msg.to_string()), modes: Mutex::default() }
+        Self {
+            result: Err(msg.to_string()),
+            modes: Mutex::default(),
+        }
     }
 }
 
 impl ManualAgent for FakeAgent {
-    fn run(&self, _dir: &Path, mode: AgentMode, progress: &mut dyn FnMut(&str)) -> Result<AgentResult> {
+    fn run(
+        &self,
+        _dir: &Path,
+        mode: AgentMode,
+        progress: &mut dyn FnMut(&str),
+    ) -> Result<AgentResult> {
         progress("trabalhando");
         self.modes.lock().unwrap().push(mode);
         self.result.clone().map_err(|e| anyhow!(e))
@@ -203,9 +245,18 @@ impl FakeWiki {
     fn info_of(&self, id: &str) -> Result<DocInfo> {
         let docs = self.docs.lock().unwrap();
         let (_, text, revision, _) = docs.get(id).ok_or_else(|| anyhow!("doc não existe"))?;
-        Ok(DocInfo { id: id.to_string(), url: format!("https://wiki/doc/{id}"), revision: *revision, text: text.clone() })
+        Ok(DocInfo {
+            id: id.to_string(),
+            url: format!("https://wiki/doc/{id}"),
+            revision: *revision,
+            text: text.clone(),
+        })
     }
-    fn edit_doc(&self, id: &str, f: impl FnOnce(&mut (String, String, u64, bool))) -> Result<DocInfo> {
+    fn edit_doc(
+        &self,
+        id: &str,
+        f: impl FnOnce(&mut (String, String, u64, bool)),
+    ) -> Result<DocInfo> {
         {
             let mut docs = self.docs.lock().unwrap();
             let doc = docs.get_mut(id).ok_or_else(|| anyhow!("doc não existe"))?;
@@ -218,7 +269,10 @@ impl FakeWiki {
 
 impl Wiki for FakeWiki {
     fn collections(&self) -> Result<Vec<Collection>> {
-        Ok(vec![Collection { id: "col-1".into(), name: "Manuais".into() }])
+        Ok(vec![Collection {
+            id: "col-1".into(),
+            name: "Manuais".into(),
+        }])
     }
     fn upload_image(&self, _doc_id: Option<&str>, name: &str, bytes: &[u8]) -> Result<String> {
         let mut uploads = self.uploads.lock().unwrap();
@@ -227,7 +281,10 @@ impl Wiki for FakeWiki {
     }
     fn create_draft(&self, _collection_id: &str, title: &str, text: &str) -> Result<DocInfo> {
         let id = format!("doc-{}", self.docs.lock().unwrap().len() + 1);
-        self.docs.lock().unwrap().insert(id.clone(), (title.to_string(), text.to_string(), 1, false));
+        self.docs
+            .lock()
+            .unwrap()
+            .insert(id.clone(), (title.to_string(), text.to_string(), 1, false));
         self.info_of(&id)
     }
     fn update(&self, id: &str, title: &str, text: &str) -> Result<DocInfo> {
@@ -244,7 +301,12 @@ impl Wiki for FakeWiki {
     }
     fn download_attachment(&self, attachment_id: &str) -> Result<Vec<u8>> {
         let n: usize = attachment_id.trim_start_matches("att-").parse()?;
-        self.uploads.lock().unwrap().get(n - 1).map(|u| u.1.clone()).ok_or_else(|| anyhow!("anexo não existe"))
+        self.uploads
+            .lock()
+            .unwrap()
+            .get(n - 1)
+            .map(|u| u.1.clone())
+            .ok_or_else(|| anyhow!("anexo não existe"))
     }
 }
 
@@ -258,7 +320,10 @@ impl RecordingHandle for FakeHandle {
     fn marker(&self) {}
     fn stop(self) -> Result<StopInfo> {
         *self.stopped.lock().unwrap() = true;
-        Ok(StopInfo { duration_ms: 60_000, audio_offset_ms: Some(120) })
+        Ok(StopInfo {
+            duration_ms: 60_000,
+            audio_offset_ms: Some(120),
+        })
     }
 }
 
@@ -271,16 +336,39 @@ impl Recorder for FakeRecorder {
     type Handle = FakeHandle;
     fn start(&self, dir: &Path, _cfg: &CaptureConfig) -> Result<FakeHandle> {
         self.started.lock().unwrap().push(dir.to_path_buf());
-        Ok(FakeHandle { stopped: Arc::default() })
+        Ok(FakeHandle {
+            stopped: Arc::default(),
+        })
     }
 }
 
 pub fn meta(id: &str, title: &str, started_at: &str) -> SessionMeta {
-    SessionMeta { schema_version: SCHEMA_VERSION, id: id.into(), title: title.into(), started_at: started_at.into(), audio_offset_ms: None, duration_ms: None }
+    SessionMeta {
+        schema_version: SCHEMA_VERSION,
+        id: id.into(),
+        title: title.into(),
+        started_at: started_at.into(),
+        audio_offset_ms: None,
+        duration_ms: None,
+    }
 }
 
 pub fn cand(id: &str, crop: Option<&str>) -> Candidate {
-    Candidate { id: id.into(), t: 0, kind: CandidateKind::Click, app: "erp.exe".into(), window: "ERP".into(), url: None, el: None, input: None, keys: vec![], speech: vec![], flags: vec![], crop: crop.map(str::to_string), context_shot: None }
+    Candidate {
+        id: id.into(),
+        t: 0,
+        kind: CandidateKind::Click,
+        app: "erp.exe".into(),
+        window: "ERP".into(),
+        url: None,
+        el: None,
+        input: None,
+        keys: vec![],
+        speech: vec![],
+        flags: vec![],
+        crop: crop.map(str::to_string),
+        context_shot: None,
+    }
 }
 
 pub fn manual_with_image(img: &str) -> Manual {
@@ -291,7 +379,13 @@ pub fn manual_with_image(img: &str) -> Manual {
         pre_requisitos: vec![],
         secoes: vec![Secao {
             titulo: "Cadastro".into(),
-            passos: vec![Passo { candidatos: vec![img.into()], imagem: Some(img.into()), texto: "Clique em **Nova nota**.".into(), aviso: None, dica: None }],
+            passos: vec![Passo {
+                candidatos: vec![img.into()],
+                imagem: Some(img.into()),
+                texto: "Clique em **Nova nota**.".into(),
+                aviso: None,
+                dica: None,
+            }],
         }],
         descartados: vec![],
     }
@@ -308,6 +402,11 @@ pub fn click_ev(t: u64) -> Event {
         shot: Some(format!("shots/{t:08}.png")),
         dhash: None,
         el: None,
-        monitor: Rect { left: 0, top: 0, right: 1920, bottom: 1080 },
+        monitor: Rect {
+            left: 0,
+            top: 0,
+            right: 1920,
+            bottom: 1080,
+        },
     }
 }

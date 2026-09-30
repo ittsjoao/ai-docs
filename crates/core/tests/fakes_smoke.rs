@@ -21,7 +21,10 @@ fn fake_store_copies_rendered_images() {
     let store = FakeStore::with("s1", s);
     let r = screenmanual_core::domain::Rendered {
         markdown: "# T\n".into(),
-        images: vec![screenmanual_core::domain::ImageCopy { from: "crops/c001.png".into(), to: "img/c001.png".into() }],
+        images: vec![screenmanual_core::domain::ImageCopy {
+            from: "crops/c001.png".into(),
+            to: "img/c001.png".into(),
+        }],
     };
     store.save_rendered("s1", &r).unwrap();
     assert_eq!(store.read_file("s1", "img/c001.png").unwrap(), b"png");

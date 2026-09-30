@@ -5,12 +5,18 @@ use serde::Serialize;
 use super::error::finish;
 use super::{CommandError, CommandResult};
 use crate::domain::{PublishState, PublishStatus};
-use crate::pipeline::outline_md::{extract_attachment_ids, rewrite_images, sha256_hex, strip_frontmatter, strip_title};
+use crate::pipeline::outline_md::{
+    extract_attachment_ids, rewrite_images, sha256_hex, strip_frontmatter, strip_title,
+};
 use crate::pipeline::render::render;
 use crate::ports::{SessionStore, Wiki};
 
 /// Render + upload das imagens novas + create/update do rascunho. Chamado pelo CLI da skill.
-pub fn publish_draft<S: SessionStore, W: Wiki>(store: &S, wiki: &W, id: &str) -> CommandResult<PublishState> {
+pub fn publish_draft<S: SessionStore, W: Wiki>(
+    store: &S,
+    wiki: &W,
+    id: &str,
+) -> CommandResult<PublishState> {
     let manual = store.manual(id)?.ok_or(CommandError::NoSteps)?;
     let candidates = store.candidates(id)?;
     let mut state = store.publish_state(id)?.ok_or(CommandError::NoCollection)?;
@@ -63,17 +69,31 @@ pub struct FetchReport {
     pub mismatched: Vec<String>,
 }
 
-pub fn fetch_published<S: SessionStore, W: Wiki>(store: &S, wiki: &W, id: &str) -> CommandResult<FetchReport> {
-    let state = store.publish_state(id)?.ok_or(CommandError::InvalidState("manual ainda não publicado"))?;
-    let oid = state.outline_id.as_deref().ok_or(CommandError::InvalidState("manual ainda não publicado"))?;
+pub fn fetch_published<S: SessionStore, W: Wiki>(
+    store: &S,
+    wiki: &W,
+    id: &str,
+) -> CommandResult<FetchReport> {
+    let state = store
+        .publish_state(id)?
+        .ok_or(CommandError::InvalidState("manual ainda não publicado"))?;
+    let oid = state
+        .outline_id
+        .as_deref()
+        .ok_or(CommandError::InvalidState("manual ainda não publicado"))?;
     let doc = wiki.info(oid)?;
-    let sha_by_attachment: HashMap<&str, &str> = state.images.iter().map(|(sha, a)| (a.as_str(), sha.as_str())).collect();
+    let sha_by_attachment: HashMap<&str, &str> = state
+        .images
+        .iter()
+        .map(|(sha, a)| (a.as_str(), sha.as_str()))
+        .collect();
     let mut report = FetchReport::default();
     let mut images = Vec::new();
     for attachment in extract_attachment_ids(&doc.text) {
         match wiki.download_attachment(&attachment) {
             Ok(bytes) => {
-                if sha_by_attachment.get(attachment.as_str()) != Some(&sha256_hex(&bytes).as_str()) {
+                if sha_by_attachment.get(attachment.as_str()) != Some(&sha256_hex(&bytes).as_str())
+                {
                     report.mismatched.push(attachment.clone());
                 }
                 images.push((attachment, bytes));
@@ -85,10 +105,19 @@ pub fn fetch_published<S: SessionStore, W: Wiki>(store: &S, wiki: &W, id: &str) 
     Ok(report)
 }
 
-pub fn approve<S: SessionStore, W: Wiki>(store: &S, wiki: &W, id: &str) -> CommandResult<PublishState> {
+pub fn approve<S: SessionStore, W: Wiki>(
+    store: &S,
+    wiki: &W,
+    id: &str,
+) -> CommandResult<PublishState> {
     let result = (|| -> CommandResult<PublishState> {
-        let mut state = store.publish_state(id)?.ok_or(CommandError::InvalidState("rascunho não existe"))?;
-        let oid = state.outline_id.clone().ok_or(CommandError::InvalidState("rascunho não existe"))?;
+        let mut state = store
+            .publish_state(id)?
+            .ok_or(CommandError::InvalidState("rascunho não existe"))?;
+        let oid = state
+            .outline_id
+            .clone()
+            .ok_or(CommandError::InvalidState("rascunho não existe"))?;
         if state.status == Some(PublishStatus::Published) {
             return Err(CommandError::InvalidState("manual já publicado"));
         }

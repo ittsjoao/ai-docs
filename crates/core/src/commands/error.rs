@@ -9,7 +9,9 @@ pub enum CommandError {
     NoSteps,
     #[error("coleção do Outline não definida para esta sessão")]
     NoCollection,
-    #[error("o documento foi editado no Outline (revisão {remote}; última publicada pelo app: {local})")]
+    #[error(
+        "o documento foi editado no Outline (revisão {remote}; última publicada pelo app: {local})"
+    )]
     EditedManually { local: u64, remote: u64 },
     #[error(transparent)]
     Render(#[from] RenderError),
@@ -20,7 +22,11 @@ pub enum CommandError {
 pub type CommandResult<T> = Result<T, CommandError>;
 
 /// Registra o resultado na sessão: limpa o erro no sucesso, grava a mensagem na falha.
-pub(crate) fn finish<S: SessionStore, T>(store: &S, id: &str, result: CommandResult<T>) -> CommandResult<T> {
+pub(crate) fn finish<S: SessionStore, T>(
+    store: &S,
+    id: &str,
+    result: CommandResult<T>,
+) -> CommandResult<T> {
     let message = result.as_ref().err().map(|e| e.to_string());
     let recorded = store.set_error(id, message.as_deref());
     match result {

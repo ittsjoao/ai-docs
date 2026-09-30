@@ -86,7 +86,11 @@ pub fn vocabulary(meta: &SessionMeta, events: &[Event]) -> String {
             _ => {}
         }
     }
-    terms.join(", ").chars().take(VOCABULARY_MAX_CHARS).collect()
+    terms
+        .join(", ")
+        .chars()
+        .take(VOCABULARY_MAX_CHARS)
+        .collect()
 }
 
 #[cfg(test)]
@@ -95,13 +99,25 @@ mod tests {
     use crate::domain::*;
 
     fn seg(start: u64, end: u64, text: &str) -> Segment {
-        Segment { start, end, text: text.into(), words: vec![Word { w: "x".into(), s: start, e: end }] }
+        Segment {
+            start,
+            end,
+            text: text.into(),
+            words: vec![Word {
+                w: "x".into(),
+                s: start,
+                e: end,
+            }],
+        }
     }
 
     #[test]
     fn align_shifts_and_clamps_at_zero() {
         let out = align(vec![seg(1000, 2000, "a"), seg(100, 300, "b")], -200);
-        assert_eq!((out[0].start, out[0].end, out[0].words[0].s), (800, 1800, 800));
+        assert_eq!(
+            (out[0].start, out[0].end, out[0].words[0].s),
+            (800, 1800, 800)
+        );
         let out = align(vec![seg(100, 300, "b")], -500);
         assert_eq!((out[0].start, out[0].end), (0, 0));
     }
@@ -109,9 +125,15 @@ mod tests {
     #[test]
     fn pause_ranges_close_on_resume_or_stay_open() {
         let ev = vec![
-            Event::Pause { t: 100, reason: PauseReason::Auto },
+            Event::Pause {
+                t: 100,
+                reason: PauseReason::Auto,
+            },
             Event::Resume { t: 500 },
-            Event::Pause { t: 900, reason: PauseReason::Manual },
+            Event::Pause {
+                t: 900,
+                reason: PauseReason::Manual,
+            },
         ];
         assert_eq!(pause_ranges(&ev), vec![(100, 500), (900, u64::MAX)]);
     }
@@ -131,15 +153,49 @@ mod tests {
 
     #[test]
     fn vocabulary_dedupes_and_truncates() {
-        let meta = SessionMeta { schema_version: 1, id: "s".into(), title: "Emitir NFS-e".into(), started_at: String::new(), audio_offset_ms: None, duration_ms: None };
-        let el = Element { name: "CNPJ".into(), role: "Edit".into(), automation_id: String::new(), class_name: String::new(), rect: None, is_password: false, ancestors: vec![], quality: Quality::Uia };
+        let meta = SessionMeta {
+            schema_version: 1,
+            id: "s".into(),
+            title: "Emitir NFS-e".into(),
+            started_at: String::new(),
+            audio_offset_ms: None,
+            duration_ms: None,
+        };
+        let el = Element {
+            name: "CNPJ".into(),
+            role: "Edit".into(),
+            automation_id: String::new(),
+            class_name: String::new(),
+            rect: None,
+            is_password: false,
+            ancestors: vec![],
+            quality: Quality::Uia,
+        };
         let ev = vec![
-            Event::Window { t: 0, app: "erp.exe".into(), title: "ERP".into(), url: None },
-            Event::Window { t: 5, app: "erp.exe".into(), title: "ERP".into(), url: None },
-            Event::Type { t: 9, el: Some(el), chars: 14, password: false },
+            Event::Window {
+                t: 0,
+                app: "erp.exe".into(),
+                title: "ERP".into(),
+                url: None,
+            },
+            Event::Window {
+                t: 5,
+                app: "erp.exe".into(),
+                title: "ERP".into(),
+                url: None,
+            },
+            Event::Type {
+                t: 9,
+                el: Some(el),
+                chars: 14,
+                password: false,
+            },
         ];
         assert_eq!(vocabulary(&meta, &ev), "Emitir NFS-e, ERP, CNPJ");
-        let long = SessionMeta { title: "x".repeat(2000), ..meta };
+        let long = SessionMeta {
+            title: "x".repeat(2000),
+            ..meta
+        };
         assert_eq!(vocabulary(&long, &[]).chars().count(), 800);
     }
 }

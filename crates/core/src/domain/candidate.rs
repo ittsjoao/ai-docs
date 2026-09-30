@@ -62,7 +62,13 @@ mod tests {
           "crop":"crops/c012.png","context_shot":null}"#;
         let c: Candidate = serde_json::from_str(json).unwrap();
         assert_eq!(c.kind, CandidateKind::Fill);
-        assert_eq!(c.input, Some(Input { chars: 14, password: false }));
+        assert_eq!(
+            c.input,
+            Some(Input {
+                chars: 14,
+                password: false
+            })
+        );
         assert_eq!(c.el.unwrap().rect, None);
     }
 }

@@ -24,7 +24,12 @@ pub trait SessionStore {
     fn save_rendered(&self, id: &str, rendered: &Rendered) -> PortResult<()>;
     fn read_file(&self, id: &str, rel: &str) -> PortResult<Vec<u8>>;
     /// Grava published/manual.md e published/img/<attachment_id>.png.
-    fn save_published(&self, id: &str, markdown: &str, images: &[(String, Vec<u8>)]) -> PortResult<()>;
+    fn save_published(
+        &self,
+        id: &str,
+        markdown: &str,
+        images: &[(String, Vec<u8>)],
+    ) -> PortResult<()>;
     fn publish_state(&self, id: &str) -> PortResult<Option<PublishState>>;
     fn save_publish_state(&self, id: &str, state: &PublishState) -> PortResult<()>;
     /// Acrescenta uma linha {t, texto} a feedback.jsonl (o adapter carimba a hora).
@@ -69,7 +74,12 @@ pub struct AgentResult {
 }
 
 pub trait ManualAgent {
-    fn run(&self, dir: &Path, mode: AgentMode, progress: &mut dyn FnMut(&str)) -> PortResult<AgentResult>;
+    fn run(
+        &self,
+        dir: &Path,
+        mode: AgentMode,
+        progress: &mut dyn FnMut(&str),
+    ) -> PortResult<AgentResult>;
 }
 
 #[derive(Debug, Clone, PartialEq)]

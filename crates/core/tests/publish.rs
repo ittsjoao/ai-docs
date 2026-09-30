@@ -23,12 +23,18 @@ fn first_publish_creates_draft_and_uploads_image() {
     let wiki = FakeWiki::default();
     let st = publish_draft(&store, &wiki, "s1").unwrap();
     assert_eq!(st.outline_id.as_deref(), Some("doc-1"));
-    assert_eq!((st.revision, st.status), (Some(1), Some(PublishStatus::Draft)));
+    assert_eq!(
+        (st.revision, st.status),
+        (Some(1), Some(PublishStatus::Draft))
+    );
     assert_eq!(wiki.uploads.lock().unwrap().len(), 1);
     let text = wiki.info("doc-1").unwrap().text;
     assert!(text.contains("](/api/attachments.redirect?id=att-1)"));
     assert!(!text.contains("sessao:"), "frontmatter removido");
-    assert!(!text.starts_with("# Emitir NFS-e"), "título fica só no campo title do Outline: {text}");
+    assert!(
+        !text.starts_with("# Emitir NFS-e"),
+        "título fica só no campo title do Outline: {text}"
+    );
     assert_eq!(store.get("s1").publish, Some(st));
 }
 
@@ -38,7 +44,10 @@ fn republish_updates_same_doc_without_reuploading() {
     let wiki = FakeWiki::default();
     publish_draft(&store, &wiki, "s1").unwrap();
     let st = publish_draft(&store, &wiki, "s1").unwrap();
-    assert_eq!((st.outline_id.as_deref(), st.revision), (Some("doc-1"), Some(2)));
+    assert_eq!(
+        (st.outline_id.as_deref(), st.revision),
+        (Some("doc-1"), Some(2))
+    );
     assert_eq!(wiki.uploads.lock().unwrap().len(), 1);
 }
 
@@ -49,18 +58,36 @@ fn external_edit_blocks_publish() {
     publish_draft(&store, &wiki, "s1").unwrap();
     wiki.external_edit("doc-1");
     let err = publish_draft(&store, &wiki, "s1").unwrap_err();
-    assert!(matches!(err, CommandError::EditedManually { local: 1, remote: 2 }), "{err}");
+    assert!(
+        matches!(
+            err,
+            CommandError::EditedManually {
+                local: 1,
+                remote: 2
+            }
+        ),
+        "{err}"
+    );
 }
 
 #[test]
 fn render_and_state_errors() {
     let wiki = FakeWiki::default();
     let err = publish_draft(&session_with_manual("c999"), &wiki, "s1").unwrap_err();
-    assert!(matches!(err, CommandError::Render(RenderError::UnknownCandidate { passo: 1, .. })));
-    let mut s = Sess { candidates: Some(vec![]), ..Default::default() };
+    assert!(matches!(
+        err,
+        CommandError::Render(RenderError::UnknownCandidate { passo: 1, .. })
+    ));
+    let mut s = Sess {
+        candidates: Some(vec![]),
+        ..Default::default()
+    };
     let err = publish_draft(&FakeStore::with("s1", s.clone()), &wiki, "s1").unwrap_err();
     assert!(matches!(err, CommandError::NoSteps));
-    s.manual = Some(Manual { secoes: vec![], ..manual_with_image("c001") });
+    s.manual = Some(Manual {
+        secoes: vec![],
+        ..manual_with_image("c001")
+    });
     let err = publish_draft(&FakeStore::with("s1", s), &wiki, "s1").unwrap_err();
     assert!(matches!(err, CommandError::NoCollection));
 }
@@ -76,7 +103,10 @@ fn fetch_saves_published_copy_and_reports_integrity() {
     assert!(md.contains("Nova nota"));
     assert_eq!(images, vec![("att-1".to_string(), b"png-1".to_vec())]);
     wiki.uploads.lock().unwrap()[0].1 = b"corrompido".to_vec();
-    assert_eq!(fetch_published(&store, &wiki, "s1").unwrap().mismatched, vec!["att-1"]);
+    assert_eq!(
+        fetch_published(&store, &wiki, "s1").unwrap().mismatched,
+        vec!["att-1"]
+    );
 }
 
 #[test]
@@ -85,9 +115,15 @@ fn approve_publishes_draft_once() {
     let wiki = FakeWiki::default();
     publish_draft(&store, &wiki, "s1").unwrap();
     let st = approve(&store, &wiki, "s1").unwrap();
-    assert_eq!((st.status, st.revision), (Some(PublishStatus::Published), Some(2)));
+    assert_eq!(
+        (st.status, st.revision),
+        (Some(PublishStatus::Published), Some(2))
+    );
     assert!(wiki.is_published("doc-1"));
-    assert!(matches!(approve(&store, &wiki, "s1").unwrap_err(), CommandError::InvalidState(_)));
+    assert!(matches!(
+        approve(&store, &wiki, "s1").unwrap_err(),
+        CommandError::InvalidState(_)
+    ));
 }
 
 #[test]

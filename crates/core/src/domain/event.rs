@@ -71,7 +71,9 @@ pub enum PauseReason {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
-    SessionStart { t: u64 },
+    SessionStart {
+        t: u64,
+    },
     Window {
         t: u64,
         app: String,
@@ -98,12 +100,26 @@ pub enum Event {
         #[serde(default)]
         password: bool,
     },
-    Key { t: u64, combo: String },
-    Marker { t: u64 },
-    Pause { t: u64, reason: PauseReason },
-    Resume { t: u64 },
-    AudioLost { t: u64 },
-    SessionEnd { t: u64 },
+    Key {
+        t: u64,
+        combo: String,
+    },
+    Marker {
+        t: u64,
+    },
+    Pause {
+        t: u64,
+        reason: PauseReason,
+    },
+    Resume {
+        t: u64,
+    },
+    AudioLost {
+        t: u64,
+    },
+    SessionEnd {
+        t: u64,
+    },
 }
 
 impl Event {
@@ -138,14 +154,38 @@ mod tests {
 
     #[test]
     fn window_without_url_parses() {
-        let ev: Event = serde_json::from_str(r#"{"type":"window","t":10,"app":"erp.exe","title":"ERP"}"#).unwrap();
-        assert_eq!(ev, Event::Window { t: 10, app: "erp.exe".into(), title: "ERP".into(), url: None });
+        let ev: Event =
+            serde_json::from_str(r#"{"type":"window","t":10,"app":"erp.exe","title":"ERP"}"#)
+                .unwrap();
+        assert_eq!(
+            ev,
+            Event::Window {
+                t: 10,
+                app: "erp.exe".into(),
+                title: "ERP".into(),
+                url: None
+            }
+        );
     }
 
     #[test]
     fn same_element_by_automation_id_or_name_role_rect() {
-        let r = Some(Rect { left: 0, top: 0, right: 10, bottom: 10 });
-        let a = Element { name: "CNPJ".into(), role: "Edit".into(), automation_id: "txtCnpj".into(), class_name: String::new(), rect: r, is_password: false, ancestors: vec![], quality: Quality::Uia };
+        let r = Some(Rect {
+            left: 0,
+            top: 0,
+            right: 10,
+            bottom: 10,
+        });
+        let a = Element {
+            name: "CNPJ".into(),
+            role: "Edit".into(),
+            automation_id: "txtCnpj".into(),
+            class_name: String::new(),
+            rect: r,
+            is_password: false,
+            ancestors: vec![],
+            quality: Quality::Uia,
+        };
         let mut b = a.clone();
         b.name = "outro".into();
         assert!(a.same_as(&b), "mesmo automation_id");

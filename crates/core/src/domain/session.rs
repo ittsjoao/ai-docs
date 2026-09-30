@@ -33,7 +33,11 @@ pub fn slug(s: &str) -> String {
     }
     let cut: String = out.trim_end_matches('-').chars().take(40).collect();
     let cut = cut.trim_end_matches('-');
-    if cut.is_empty() { "sessao".to_string() } else { cut.to_string() }
+    if cut.is_empty() {
+        "sessao".to_string()
+    } else {
+        cut.to_string()
+    }
 }
 
 pub fn session_id(started_at: &str, title: &str) -> String {
@@ -55,6 +59,9 @@ mod tests {
 
     #[test]
     fn session_id_uses_local_date_and_time() {
-        assert_eq!(session_id("2026-09-29T14:30:02-03:00", "Emitir NFS-e"), "2026-09-29_1430_emitir-nfs-e");
+        assert_eq!(
+            session_id("2026-09-29T14:30:02-03:00", "Emitir NFS-e"),
+            "2026-09-29_1430_emitir-nfs-e"
+        );
     }
 }

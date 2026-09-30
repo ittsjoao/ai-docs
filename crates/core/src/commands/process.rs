@@ -23,7 +23,10 @@ pub fn process_session<S: SessionStore, T: Transcriber, I: Imaging>(
                 let segments = match store.audio_path(id)? {
                     Some(audio) => {
                         let raw = transcriber.transcribe(&audio, &vocabulary(&meta, &events))?;
-                        filter_hallucinations(align(raw, meta.audio_offset_ms.unwrap_or(0)), &pause_ranges(&events))
+                        filter_hallucinations(
+                            align(raw, meta.audio_offset_ms.unwrap_or(0)),
+                            &pause_ranges(&events),
+                        )
                     }
                     None => vec![],
                 };

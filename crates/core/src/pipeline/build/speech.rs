@@ -11,7 +11,13 @@ pub(crate) fn assign_speech(drafts: &mut [Draft], segments: &[Segment], lead_ms:
     let starts: Vec<u64> = drafts
         .iter()
         .enumerate()
-        .map(|(i, d)| if i == 0 { 0 } else { d.cand.t.saturating_sub(lead_ms) })
+        .map(|(i, d)| {
+            if i == 0 {
+                0
+            } else {
+                d.cand.t.saturating_sub(lead_ms)
+            }
+        })
         .collect();
     for seg in segments {
         let end = seg.end.max(seg.start + 1);
@@ -38,7 +44,10 @@ mod tests {
     use crate::pipeline::build::test_util::*;
 
     fn drafts() -> Vec<Draft> {
-        group(&[click(10_000, 1, 1, None), click(20_000, 900, 900, None)], &BuildConfig::default())
+        group(
+            &[click(10_000, 1, 1, None), click(20_000, 900, 900, None)],
+            &BuildConfig::default(),
+        )
     }
 
     #[test]
@@ -46,7 +55,11 @@ mod tests {
         let mut d = drafts();
         assign_speech(
             &mut d,
-            &[seg(1000, 2000, "antes de tudo"), seg(8600, 9800, "agora clico"), seg(18_000, 19_500, "e depois este")],
+            &[
+                seg(1000, 2000, "antes de tudo"),
+                seg(8600, 9800, "agora clico"),
+                seg(18_000, 19_500, "e depois este"),
+            ],
             1500,
         );
         assert_eq!(d[0].cand.speech, vec!["antes de tudo", "agora clico"]);
