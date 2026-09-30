@@ -142,10 +142,8 @@ pub(crate) fn group(events: &[Event], cfg: &BuildConfig) -> Vec<Draft> {
 }
 
 #[cfg(test)]
-#[allow(unused_imports)]
+#[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::pipeline::build::test_util::*;
     use super::*;
     use crate::pipeline::build::test_util::*;
 

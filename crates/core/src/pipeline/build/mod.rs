@@ -4,6 +4,7 @@ mod test_util;
 
 use crate::domain::{BuildConfig, Candidate, CropSpec, Event, Segment};
 
+// removido na Task 6, quando add_flag passa a ser usado
 #[allow(unused_imports)]
 pub(crate) use group::{add_flag, Draft};
 
