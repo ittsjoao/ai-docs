@@ -2,7 +2,9 @@
 mod aggregate;
 mod audio;
 mod dhash;
+mod hooks;
 mod keys;
 mod privacy;
 mod quality;
 mod sink;
+mod win;
