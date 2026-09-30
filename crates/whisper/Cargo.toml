@@ -1,0 +1,13 @@
+[package]
+name = "screenmanual-whisper"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+screenmanual-core = { path = "../core" }
+anyhow.workspace = true
+whisper-rs = "0.16"
+
+[dev-dependencies]
+hound = "3.5"

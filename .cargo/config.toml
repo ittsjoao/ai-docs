@@ -1,0 +1,14 @@
+# Build do whisper-rs-sys no MSVC (spike, achado 1): sem isto o whisper.cpp sai sem /O2 e sem AVX2
+# (~9× mais lento). O whisper-rs-sys repassa ao CMake toda variável GGML_*/CMAKE_*.
+# Em debug ele compila como RelWithDebInfo, por isso as duas configurações.
+[env]
+LIBCLANG_PATH = "C:\\Program Files\\LLVM\\bin"
+GGML_NATIVE = "OFF"
+GGML_AVX = "ON"
+GGML_AVX2 = "ON"
+GGML_FMA = "ON"
+GGML_F16C = "ON"
+CMAKE_C_FLAGS_RELEASE = "/O2 /Ob2 /DNDEBUG"
+CMAKE_CXX_FLAGS_RELEASE = "/O2 /Ob2 /DNDEBUG"
+CMAKE_C_FLAGS_RELWITHDEBINFO = "/O2 /Ob2 /DNDEBUG"
+CMAKE_CXX_FLAGS_RELWITHDEBINFO = "/O2 /Ob2 /DNDEBUG"
