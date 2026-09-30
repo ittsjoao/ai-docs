@@ -9,3 +9,5 @@ screenmanual-core = { path = "../core" }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+image = { version = "0.25", default-features = false, features = ["png"] }
+imageproc = { version = "0.25", default-features = false }

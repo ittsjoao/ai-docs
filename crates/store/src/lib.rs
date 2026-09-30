@@ -1,4 +1,6 @@
-//! Adapters de arquivo: a pasta da sessão (`SessionStore`) e, na Task 2, os recortes (`Imaging`).
+//! Adapters de arquivo: a pasta da sessão (`SessionStore`) e os recortes de imagem (`Imaging`).
 mod fs_store;
+mod imaging;
 
 pub use fs_store::{utc_now_rfc3339, FsStore};
+pub use imaging::ImageCrops;
