@@ -89,6 +89,7 @@ const SHELL_CLASSES: &[&str] = &[
     "Shell_TrayWnd",
     "Shell_SecondaryTrayWnd",
     "NotifyIconOverflowWindow",
+    "TaskListThumbnailWnd",
 ];
 const NO_MONITOR: Rect = Rect {
     left: 0,
@@ -538,6 +539,15 @@ mod tests {
         assert!(click(&mut a, 1000).is_empty());
         a.probe_mut().at = probed("Chrome", 5, "Shell_TrayWnd", false);
         assert!(click(&mut a, 2000).is_empty());
+        assert!(a.probe_mut().shots.is_empty());
+    }
+
+    #[test]
+    fn taskbar_thumbnail_clicks_are_ignored() {
+        let mut a = agg();
+        a.start();
+        a.probe_mut().at = probed("Miniatura", 5, "TaskListThumbnailWnd", false);
+        assert!(click(&mut a, 1000).is_empty());
         assert!(a.probe_mut().shots.is_empty());
     }
 

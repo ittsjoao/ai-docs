@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -170,8 +170,13 @@ fn pump(
 ) -> anyhow::Result<u64> {
     let mut audio_lost_reported = false;
     let mut last_tick = Instant::now();
+    let mut pending: Option<Raw> = None;
     loop {
-        let raw = match rx.recv_timeout(TICK) {
+        let received = match pending.take() {
+            Some(raw) => Ok(raw),
+            None => rx.recv_timeout(TICK),
+        };
+        let raw = match received {
             Ok(raw) => raw,
             Err(RecvTimeoutError::Timeout) => {
                 last_tick = Instant::now();
@@ -192,8 +197,15 @@ fn pump(
             write_all(sink, agg.feed(Raw::AudioLost { t: now(t0) }), audio)?;
         }
         if last_tick.elapsed() >= TICK {
-            last_tick = Instant::now();
-            write_all(sink, agg.feed(Raw::Tick { t: now(t0) }), audio)?;
+            // Tick extra só com a fila vazia, para não ultrapassar eventos com t menor.
+            match rx.try_recv() {
+                Ok(raw) => pending = Some(raw),
+                Err(TryRecvError::Empty) => {
+                    last_tick = Instant::now();
+                    write_all(sink, agg.feed(Raw::Tick { t: now(t0) }), audio)?;
+                }
+                Err(TryRecvError::Disconnected) => pending = Some(Raw::Stop { t: now(t0) }),
+            }
         }
     }
 }

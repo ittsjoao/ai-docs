@@ -257,7 +257,10 @@ impl Probe for WinProbe {
                 break;
             }
             let control_type = el.get_control_type().ok();
-            if matches!(control_type, Some(ControlType::Edit)) {
+            if matches!(
+                control_type,
+                Some(ControlType::Edit | ControlType::ComboBox)
+            ) {
                 if let Ok(value) = el
                     .get_pattern::<UIValuePattern>()
                     .and_then(|p| p.get_value())
