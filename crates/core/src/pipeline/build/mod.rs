@@ -1,4 +1,5 @@
 mod group;
+mod speech;
 #[cfg(test)]
 mod test_util;
 
@@ -14,7 +15,8 @@ pub struct BuildOutput {
     pub crops: Vec<CropSpec>,
 }
 
-pub fn build(events: &[Event], _speech: &[Segment], cfg: &BuildConfig) -> BuildOutput {
-    let drafts = group::group(events, cfg);
+pub fn build(events: &[Event], speech: &[Segment], cfg: &BuildConfig) -> BuildOutput {
+    let mut drafts = group::group(events, cfg);
+    speech::assign_speech(&mut drafts, speech, cfg.lead_ms);
     BuildOutput { candidates: drafts.into_iter().map(|d| d.cand).collect(), crops: vec![] }
 }
