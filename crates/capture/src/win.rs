@@ -103,7 +103,7 @@ impl WinProbe {
             .or_else(|| exe_name(pid))
             .unwrap_or_default();
         Probed {
-            el,
+            el: Some(el),
             pid,
             root_class,
             app,
@@ -198,8 +198,20 @@ impl Probe for WinProbe {
 
     fn element_at(&mut self, x: i32, y: i32) -> Option<Probed> {
         let root = root_at(x, y);
-        let e = self.uia.element_from_point(Point::new(x, y)).ok()?;
-        Some(self.describe(&e, root))
+        match self.uia.element_from_point(Point::new(x, y)) {
+            Ok(e) => Some(self.describe(&e, root)),
+            // Sem UIA, a janela raiz (Win32) ainda basta para denylist e classes do shell.
+            Err(_) => {
+                let pid = root.pid?;
+                Some(Probed {
+                    el: None,
+                    pid,
+                    root_class: root.class,
+                    app: exe_name(pid).unwrap_or_default(),
+                    title: root.title,
+                })
+            }
+        }
     }
 
     fn focused(&mut self) -> Option<Probed> {

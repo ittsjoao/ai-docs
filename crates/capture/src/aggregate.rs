@@ -54,7 +54,7 @@ pub(crate) struct Foreground {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Probed {
-    pub el: Element,
+    pub el: Option<Element>,
     pub pid: u32,
     pub root_class: String,
     /// Exe da janela raiz sob o ponto, em minúsculas.
@@ -90,6 +90,10 @@ const SHELL_CLASSES: &[&str] = &[
     "Shell_SecondaryTrayWnd",
     "NotifyIconOverflowWindow",
     "TaskListThumbnailWnd",
+    // Alt+Tab e Visão de Tarefas (Windows 10 e 11).
+    "MultitaskingViewFrame",
+    "TaskSwitcherWnd",
+    "XamlExplorerHostIslandWindow",
 ];
 const NO_MONITOR: Rect = Rect {
     left: 0,
@@ -255,21 +259,16 @@ impl<P: Probe> Aggregator<P> {
 
     fn mouse_down(&mut self, t: u64, x: i32, y: i32, button: MouseButton) {
         let probed = self.probe.element_at(x, y);
+        // O hook do mouse dispara antes de o foco mudar: confere a janela sob o clique (mesmo sem UIA).
         if probed.as_ref().is_some_and(|p| {
-            p.pid == self.own_pid || SHELL_CLASSES.contains(&p.root_class.as_str())
+            p.pid == self.own_pid
+                || SHELL_CLASSES.contains(&p.root_class.as_str())
+                || denied(&p.app, &p.title, &self.cfg)
         }) {
             self.ignored_button = Some(button);
             return;
         }
-        // O hook do mouse dispara antes de o foco mudar: confere a janela sob o clique.
-        if probed
-            .as_ref()
-            .is_some_and(|p| denied(&p.app, &p.title, &self.cfg))
-        {
-            self.ignored_button = Some(button);
-            return;
-        }
-        let el = probed.map(|p| p.el);
+        let el = probed.and_then(|p| p.el);
         let blackout = el.as_ref().filter(|e| e.is_password).and_then(|e| e.rect);
         let shot = self.probe.screenshot(t, x, y, blackout);
         self.pending = Some(Pending {
@@ -322,10 +321,13 @@ impl<P: Probe> Aggregator<P> {
                         return;
                     }
                     let focused = self.probe.focused();
-                    let password = focused.as_ref().is_some_and(|p| p.el.is_password);
+                    let password = focused
+                        .as_ref()
+                        .and_then(|p| p.el.as_ref())
+                        .is_some_and(|e| e.is_password);
                     self.typing = Some(Typing {
                         t,
-                        el: focused.map(|p| p.el),
+                        el: focused.and_then(|p| p.el),
                         chars: 0,
                         password,
                     });
@@ -426,7 +428,7 @@ mod tests {
             quality: Quality::Uia,
         };
         Some(Probed {
-            el,
+            el: Some(el),
             pid,
             root_class: root_class.into(),
             app: "erp.exe".into(),
@@ -543,11 +545,28 @@ mod tests {
     }
 
     #[test]
+    fn denied_window_without_uia_is_ignored() {
+        let mut a = agg();
+        a.start();
+        a.probe_mut().at = Some(Probed {
+            el: None,
+            pid: 5,
+            root_class: "Chrome_WidgetWin_1".into(),
+            app: "keepass.exe".into(),
+            title: "Cofre".into(),
+        });
+        assert!(click(&mut a, 1000).is_empty());
+        assert!(a.probe_mut().shots.is_empty());
+    }
+
+    #[test]
     fn taskbar_thumbnail_clicks_are_ignored() {
         let mut a = agg();
         a.start();
         a.probe_mut().at = probed("Miniatura", 5, "TaskListThumbnailWnd", false);
         assert!(click(&mut a, 1000).is_empty());
+        a.probe_mut().at = probed("Alt+Tab", 5, "XamlExplorerHostIslandWindow", false);
+        assert!(click(&mut a, 2000).is_empty());
         assert!(a.probe_mut().shots.is_empty());
     }
 
@@ -565,7 +584,7 @@ mod tests {
             vec![
                 Event::Type {
                     t: 100,
-                    el: Some(focused.clone()),
+                    el: focused.clone(),
                     chars: 3,
                     password: false
                 },
@@ -581,7 +600,7 @@ mod tests {
             out[0],
             Event::Type {
                 t: 200,
-                el: Some(focused),
+                el: focused,
                 chars: 1,
                 password: false
             }

@@ -79,7 +79,13 @@ pub(crate) struct Hooks {
 
 /// Instala os hooks numa thread com loop de mensagens. Os callbacks só enviam `Raw` e retornam.
 pub(crate) fn start(tx: Sender<Raw>, t0: Instant) -> anyhow::Result<Hooks> {
-    *TARGET.lock().unwrap_or_else(|e| e.into_inner()) = Some((tx, t0));
+    {
+        let mut target = TARGET.lock().unwrap_or_else(|e| e.into_inner());
+        if target.is_some() {
+            bail!("já existe uma gravação ativa");
+        }
+        *target = Some((tx, t0));
+    }
     let (id_tx, id_rx) = std::sync::mpsc::channel::<Option<u32>>();
     let thread = std::thread::spawn(move || unsafe {
         let mouse = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), None, 0);
@@ -90,7 +96,7 @@ pub(crate) fn start(tx: Sender<Raw>, t0: Instant) -> anyhow::Result<Hooks> {
         let _ = PeekMessageW(&mut msg, None, WM_USER, WM_USER, PM_NOREMOVE);
         let _ = id_tx.send(ok.then(|| GetCurrentThreadId()));
         if ok {
-            while GetMessageW(&mut msg, None, 0, 0).as_bool() {}
+            while GetMessageW(&mut msg, None, 0, 0).0 > 0 {}
         }
         if let Ok(h) = mouse {
             let _ = UnhookWindowsHookEx(h);

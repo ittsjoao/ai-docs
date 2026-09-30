@@ -33,20 +33,12 @@ pub(crate) fn sanitize_url(raw: &str) -> Option<String> {
     // Cut query/fragment first to avoid leaking them when parsing schemeless URLs
     let before_query = raw.split(['?', '#']).next().unwrap_or("");
 
-    // Try to extract scheme, validating it matches [A-Za-z][A-Za-z0-9+.-]*
+    // Só http/https explícitos; sem "://" assume https.
     let (scheme, rest) = match before_query.split_once("://") {
-        Some((s, r)) => {
-            // Validate scheme format
-            if s.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-                && s.chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '.' || c == '-')
-            {
-                (s.to_lowercase(), r)
-            } else {
-                // Invalid scheme, treat whole thing as schemeless
-                ("https".to_string(), before_query)
-            }
+        Some((s, r)) if s.eq_ignore_ascii_case("http") || s.eq_ignore_ascii_case("https") => {
+            (s.to_lowercase(), r)
         }
+        Some(_) => return None,
         None => ("https".to_string(), before_query),
     };
 
@@ -55,7 +47,17 @@ pub(crate) fn sanitize_url(raw: &str) -> Option<String> {
         None => (rest, ""),
     };
     let host = authority.rsplit('@').next().unwrap_or(authority);
-    if host.is_empty() || !(host.contains('.') || host.contains(':') || host == "localhost") {
+    let (name, port) = match host.split_once(':') {
+        Some((n, p)) => (n, Some(p)),
+        None => (host, None),
+    };
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+        || port.is_some_and(|p| p.is_empty() || !p.chars().all(|c| c.is_ascii_digit()))
+        || !(name.contains('.') || name == "localhost")
+    {
         return None;
     }
     Some(format!("{scheme}://{host}{path}"))
@@ -125,6 +127,13 @@ mod tests {
             sanitize_url("Pesquisar no Google ou digitar URL"),
             None,
             "placeholder da barra vazia"
+        );
+        assert_eq!(sanitize_url("about:blank"), None);
+        assert_eq!(sanitize_url("data:text/html,x"), None);
+        assert_eq!(sanitize_url("ftp://x.com/a"), None);
+        assert_eq!(
+            sanitize_url("localhost:3000/app").as_deref(),
+            Some("https://localhost:3000/app")
         );
         // Regression: query should not leak when it contains another URL
         assert_eq!(
