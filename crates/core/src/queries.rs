@@ -31,11 +31,24 @@ pub fn get_session<S: SessionStore>(store: &S, id: &str, activity: Option<Activi
 
 // ponytail: lê cada pasta a cada chamada; cache só se a lista passar de centenas de sessões
 pub fn list_sessions<S: SessionStore>(store: &S, activity: &dyn Fn(&str) -> Option<Activity>) -> CommandResult<Vec<SessionSummary>> {
-    let mut out = store
-        .list_ids()?
+    let ids = store.list_ids()?;
+    let mut out = ids
         .iter()
-        .map(|id| get_session(store, id, activity(id)))
-        .collect::<CommandResult<Vec<_>>>()?;
+        .map(|id| {
+            match get_session(store, id, activity(id)) {
+                Ok(summary) => summary,
+                Err(e) => SessionSummary {
+                    id: id.clone(),
+                    title: id.clone(),
+                    started_at: String::new(),
+                    duration_ms: None,
+                    status: SessionStatus::Error,
+                    url: None,
+                    error: Some(e.to_string()),
+                },
+            }
+        })
+        .collect::<Vec<_>>();
     out.sort_by(|a, b| b.started_at.cmp(&a.started_at));
     Ok(out)
 }
