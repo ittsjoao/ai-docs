@@ -11,6 +11,14 @@ pub fn strip_frontmatter(md: &str) -> &str {
     md
 }
 
+/// Remove o `# título` inicial (o Outline guarda o título à parte) e as linhas em branco seguintes.
+pub fn strip_title(md: &str) -> &str {
+    match md.strip_prefix("# ") {
+        Some(rest) => rest.split_once('\n').map_or("", |(_, tail)| tail.trim_start_matches('\n')),
+        None => md,
+    }
+}
+
 pub fn rewrite_images(md: &str, map: &BTreeMap<String, String>) -> String {
     let mut out = md.to_string();
     for (path, attachment) in map {
@@ -45,6 +53,14 @@ mod tests {
     fn strips_leading_frontmatter_only() {
         assert_eq!(strip_frontmatter("---\nsessao: s1\n---\n\n# T\n"), "# T\n");
         assert_eq!(strip_frontmatter("# T\n---\nx\n---\n"), "# T\n---\nx\n---\n");
+    }
+
+    #[test]
+    fn strips_leading_title_only() {
+        assert_eq!(strip_title("# T\n\nCorpo\n\n## S\n"), "Corpo\n\n## S\n");
+        assert_eq!(strip_title("Corpo\n# T\n"), "Corpo\n# T\n");
+        assert_eq!(strip_title("## S\n"), "## S\n");
+        assert_eq!(strip_title("# T"), "");
     }
 
     #[test]

@@ -22,6 +22,9 @@ pub type CommandResult<T> = Result<T, CommandError>;
 /// Registra o resultado na sessão: limpa o erro no sucesso, grava a mensagem na falha.
 pub(crate) fn finish<S: SessionStore, T>(store: &S, id: &str, result: CommandResult<T>) -> CommandResult<T> {
     let message = result.as_ref().err().map(|e| e.to_string());
-    store.set_error(id, message.as_deref())?;
-    result
+    let recorded = store.set_error(id, message.as_deref());
+    match result {
+        Ok(v) => recorded.map(|_| v).map_err(Into::into),
+        err => err,
+    }
 }

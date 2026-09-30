@@ -7,6 +7,9 @@ use anyhow::{anyhow, Result};
 use screenmanual_core::domain::*;
 use screenmanual_core::ports::*;
 
+/// markdown + (attachment id, bytes)
+pub type Published = (String, Vec<(String, Vec<u8>)>);
+
 #[derive(Default, Clone)]
 pub struct Sess {
     pub meta: Option<SessionMeta>,
@@ -17,7 +20,7 @@ pub struct Sess {
     pub manual: Option<Manual>,
     pub markdown: Option<String>,
     pub files: HashMap<String, Vec<u8>>,
-    pub published: Option<(String, Vec<(String, Vec<u8>)>)>,
+    pub published: Option<Published>,
     pub publish: Option<PublishState>,
     pub feedback: Vec<String>,
     pub error: Option<String>,

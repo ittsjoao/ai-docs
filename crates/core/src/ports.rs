@@ -29,6 +29,10 @@ pub trait SessionStore {
     fn save_publish_state(&self, id: &str, state: &PublishState) -> PortResult<()>;
     /// Acrescenta uma linha {t, texto} a feedback.jsonl (o adapter carimba a hora).
     fn append_feedback(&self, id: &str, text: &str) -> PortResult<()>;
+    /// Contrato que o adapter de disco (plano 03) deve reproduzir:
+    /// `ended` = events.jsonl contém um evento `session_end`; `has_candidates` = candidates.json existe;
+    /// `publish` = conteúdo de publish.json; `error` = mensagem gravada por `set_error`
+    /// (persistida na pasta da sessão, ex.: `error.txt`) e limpa com `set_error(None)`.
     fn facts(&self, id: &str) -> PortResult<SessionFacts>;
     fn set_error(&self, id: &str, message: Option<&str>) -> PortResult<()>;
 }

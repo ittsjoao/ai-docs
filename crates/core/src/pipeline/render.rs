@@ -52,11 +52,11 @@ pub fn render(manual: &Manual, candidates: &[Candidate], session_id: &str) -> Re
                     images.push(ImageCopy { from: crop.clone(), to });
                 }
             }
-            if let Some(aviso) = &passo.aviso {
-                md += &format!(":::warning\n{}\n:::\n\n", aviso.trim());
+            if let Some(aviso) = passo.aviso.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+                md += &format!(":::warning\n{aviso}\n:::\n\n");
             }
-            if let Some(dica) = &passo.dica {
-                md += &format!(":::tip\n{}\n:::\n\n", dica.trim());
+            if let Some(dica) = passo.dica.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+                md += &format!(":::tip\n{dica}\n:::\n\n");
             }
         }
     }
@@ -93,6 +93,15 @@ mod tests {
         let expected = "---\nsessao: s1\n---\n\n# Emitir NFS-e\n\nEmitir nota.\n\n## Pré-requisitos\n\n- Acesso ao ERP\n\n## Cadastro\n\n**Passo 1.** Clique em **Nova nota**.\n\n![Passo 1](img/c001.png)\n\n:::warning\nConfira o CNPJ.\n:::\n";
         assert_eq!(r.markdown, expected);
         assert_eq!(r.images, vec![ImageCopy { from: "crops/c001.png".into(), to: "img/c001.png".into() }]);
+    }
+
+    #[test]
+    fn blank_callouts_are_skipped() {
+        let mut p = passo(None);
+        p.aviso = Some("  \n".into());
+        p.dica = Some("".into());
+        let r = render(&manual(p), &[cand("c001", None)], "s1").unwrap();
+        assert!(!r.markdown.contains(":::"), "{}", r.markdown);
     }
 
     #[test]

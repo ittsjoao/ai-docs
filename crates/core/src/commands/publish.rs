@@ -5,7 +5,7 @@ use serde::Serialize;
 use super::error::finish;
 use super::{CommandError, CommandResult};
 use crate::domain::{PublishState, PublishStatus};
-use crate::pipeline::outline_md::{extract_attachment_ids, rewrite_images, sha256_hex, strip_frontmatter};
+use crate::pipeline::outline_md::{extract_attachment_ids, rewrite_images, sha256_hex, strip_frontmatter, strip_title};
 use crate::pipeline::render::render;
 use crate::ports::{SessionStore, Wiki};
 
@@ -40,7 +40,9 @@ pub fn publish_draft<S: SessionStore, W: Wiki>(store: &S, wiki: &W, id: &str) ->
         links.insert(img.to.clone(), attachment);
     }
 
-    let text = rewrite_images(strip_frontmatter(&rendered.markdown), &links);
+    store.save_publish_state(id, &state)?;
+
+    let text = rewrite_images(strip_title(strip_frontmatter(&rendered.markdown)), &links);
     let doc = match state.outline_id.as_deref() {
         None => wiki.create_draft(&state.collection_id, manual.titulo.trim(), &text)?,
         Some(oid) => wiki.update(oid, manual.titulo.trim(), &text)?,
@@ -90,9 +92,13 @@ pub fn approve<S: SessionStore, W: Wiki>(store: &S, wiki: &W, id: &str) -> Comma
         if state.status == Some(PublishStatus::Published) {
             return Err(CommandError::InvalidState("manual já publicado"));
         }
+        let remote_before = wiki.info(&oid)?.revision;
         let doc = wiki.publish(&oid)?;
         state.status = Some(PublishStatus::Published);
-        state.revision = Some(doc.revision);
+        // só avança a revisão guardada se não havia edição manual; senão a divergência continua detectável
+        if state.revision == Some(remote_before) {
+            state.revision = Some(doc.revision);
+        }
         state.url = Some(doc.url);
         store.save_publish_state(id, &state)?;
         Ok(state)
