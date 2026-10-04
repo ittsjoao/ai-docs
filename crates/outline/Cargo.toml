@@ -1,0 +1,14 @@
+[package]
+name = "screenmanual-outline"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+screenmanual-core = { path = "../core" }
+anyhow.workspace = true
+serde_json.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "multipart", "native-tls"] }
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
