@@ -70,11 +70,15 @@ Você está na **pasta de uma sessão** do screenManual. O operador gravou um pr
 
 ## Dados sensíveis (validar sempre)
 
-Nada destes itens pode aparecer, nem no texto nem nas imagens publicadas:
-- CPF, CNPJ de terceiros, e-mails, valores, nomes de clientes;
-- **senhas, tokens e usuários de administrador** visíveis em campos ou títulos (ex.: `usuario@10.10.30.1:porta` no título de uma janela);
-- **MACs, IPs internos e públicos (IPv4/IPv6)** e listas de equipamentos da rede, além do necessário para o passo. Prefira tarjar as linhas que não fazem parte da ação;
-- **termos digitados que aparecem em títulos de janela ou `ancestors`**: uma busca no título do navegador, um comando no título do cmd. Não copie esses títulos para o texto;
-- **prints de contexto (`_ctx`)**: o `render` nunca os publica, só os `crop`. Não descreva nem copie para o texto nada que apareça só no fundo deles (gerenciador de senhas, internet banking, e-mail pessoal, janelas fora do procedimento).
+O manual é interno: o leitor precisa ver a tela como ela é para repetir o passo. Tarje **só** isto, nem no texto nem nas imagens publicadas:
+- dados de clientes: CPF, CNPJ de terceiros, e-mails, valores monetários, nomes de clientes;
+- **senhas, tokens e chaves** visíveis em campos, títulos ou terminais;
+- **credenciais de acesso**: o usuário no campo de login e o trecho `usuario@` de um título como `admin@10.10.30.1:8291`.
+
+**Não tarje** IPs (internos ou públicos), MACs, portas, nomes de equipamentos, tabelas e listas da tela, nem janelas de fundo que não mostrem um dos itens acima.
+
+A tarja é **mínima**: cubra só o valor sensível (o campo, o trecho do título, a linha), nunca a tabela ou a área inteira. Na dúvida, não tarje e registre em `validacao` como `{"tipo":"pendente","detalhe":"…"}`.
+
+No texto, não copie títulos de janela que tragam algo digitado (uma busca no título do navegador, um comando no título do cmd). Também não descreva nada que apareça só no fundo dos prints de contexto (`_ctx`); o `render` nunca publica esses prints, só os `crop`.
 
 Registre cada tarja em `result.json` → `validacao`, com `{"tipo":"redigido","detalhe":"…"}`.
