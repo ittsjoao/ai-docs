@@ -2352,6 +2352,7 @@ dependencies = [
  "screenmanual-capture",
  "screenmanual-core",
  "screenmanual-store",
+ "serde_json",
  "whisper-rs",
 ]
 

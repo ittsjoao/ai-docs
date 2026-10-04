@@ -13,3 +13,4 @@ whisper-rs = "0.16"
 hound = "3.5"
 screenmanual-capture = { path = "../capture" }
 screenmanual-store = { path = "../store" }
+serde_json.workspace = true

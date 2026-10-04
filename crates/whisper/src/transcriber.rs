@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail};
-use screenmanual_core::domain::{Segment, Word};
+use screenmanual_core::domain::{Segment, TranscribeConfig, TranscriptionModel, Word};
 use screenmanual_core::ports::{PortResult, Transcriber};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
@@ -40,6 +40,24 @@ impl WhisperTranscriber {
             use_prompt: false,
             min_rms: 0.005,
         }
+    }
+}
+
+/// Arquivo ggml de cada opção da tela de configurações (spec D11).
+pub fn model_file(m: TranscriptionModel) -> &'static str {
+    match m {
+        TranscriptionModel::Rapido => "ggml-small.bin",
+        TranscriptionModel::Equilibrado => "ggml-medium-q5_0.bin",
+        TranscriptionModel::Preciso => "ggml-large-v3-turbo-q5_0.bin",
+    }
+}
+
+impl WhisperTranscriber {
+    /// Transcritor para a configuração do usuário; os modelos ficam em `models_dir`.
+    pub fn from_config(models_dir: &Path, cfg: &TranscribeConfig) -> Self {
+        let mut t = Self::new(models_dir.join(model_file(cfg.modelo)));
+        t.use_prompt = cfg.vocabulario;
+        t
     }
 }
 
@@ -225,6 +243,28 @@ mod tests {
             (1000, 2000, "Clique em salvar.")
         );
         assert_eq!(segs[0].words[0].w, "Clique");
+    }
+
+    #[test]
+    fn config_picks_the_model_file_and_vocabulary() {
+        use screenmanual_core::domain::{TranscribeConfig, TranscriptionModel};
+        let dir = Path::new("modelos");
+        let t = WhisperTranscriber::from_config(
+            dir,
+            &TranscribeConfig {
+                modelo: TranscriptionModel::Rapido,
+                vocabulario: true,
+            },
+        );
+        assert_eq!(t.model, dir.join("ggml-small.bin"));
+        assert!(t.use_prompt);
+        let t = WhisperTranscriber::from_config(dir, &TranscribeConfig::default());
+        assert_eq!(t.model, dir.join("ggml-large-v3-turbo-q5_0.bin"));
+        assert!(!t.use_prompt);
+        assert_eq!(
+            model_file(TranscriptionModel::Equilibrado),
+            "ggml-medium-q5_0.bin"
+        );
     }
 
     #[test]

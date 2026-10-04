@@ -57,3 +57,52 @@ impl Default for CaptureConfig {
         }
     }
 }
+
+/// Modelo do whisper escolhido nas configurações (spec D11); os nomes de arquivo ficam no adapter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TranscriptionModel {
+    Rapido,
+    Equilibrado,
+    #[default]
+    Preciso,
+}
+
+/// Bloco `transcricao` do config.json (spec §6.1 item 8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TranscribeConfig {
+    pub modelo: TranscriptionModel,
+    /// Liga o initial_prompt com o vocabulário da sessão (experimental; spike achado 4).
+    pub vocabulario: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transcribe_config_defaults_and_parses_portuguese_names() {
+        let d: TranscribeConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            d,
+            TranscribeConfig {
+                modelo: TranscriptionModel::Preciso,
+                vocabulario: false
+            }
+        );
+        let c: TranscribeConfig =
+            serde_json::from_str(r#"{"modelo":"rapido","vocabulario":true}"#).unwrap();
+        assert_eq!(
+            c,
+            TranscribeConfig {
+                modelo: TranscriptionModel::Rapido,
+                vocabulario: true
+            }
+        );
+        assert_eq!(
+            serde_json::to_string(&TranscriptionModel::Equilibrado).unwrap(),
+            "\"equilibrado\""
+        );
+    }
+}
