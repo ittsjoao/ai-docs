@@ -1,0 +1,19 @@
+[package]
+name = "screenmanual-cli"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "screenmanual-cli"
+path = "src/main.rs"
+
+[dependencies]
+screenmanual-core = { path = "../core" }
+screenmanual-store = { path = "../store" }
+screenmanual-outline = { path = "../outline" }
+anyhow.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }

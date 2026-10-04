@@ -2613,6 +2613,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "screenmanual-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "image",
+ "screenmanual-core",
+ "screenmanual-outline",
+ "screenmanual-store",
+ "serde_json",
+]
+
+[[package]]
 name = "screenmanual-core"
 version = "0.1.0"
 dependencies = [
