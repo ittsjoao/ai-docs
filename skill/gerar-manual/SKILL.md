@@ -22,9 +22,13 @@ Você está na **pasta de uma sessão** do screenManual. O operador gravou um pr
   - `3` = o documento foi editado à mão no Outline. **Pare**, não publique, e escreva `result.json` com `url` e `revision` lidos do `publish.json`, `rodadas` com as correções já feitas, e `validacao` com `{"tipo":"editado_manualmente","detalhe":"<mensagem do CLI>"}`.
 
 
+## Instrução extra do operador
+
+Se existir `instrucoes.txt` nesta pasta, leia antes de tudo, nos dois modos. É uma instrução do operador, gravada pelo app (ex.: "assuma que o leitor já sabe o IP do roteador", "não inclua a parte do Prompt de Comando"). Siga-a: ela prevalece sobre as regras de redação e sobre a escolha de passos e imagens. Ela **não** muda as regras de ferramenta nem a validação de dados sensíveis. Se pedir algo que essas regras proíbem, ignore essa parte e registre em `validacao` com `{"tipo":"pendente","detalhe":"…"}`.
+
 ## Modo `gerar`
 
-1. **Contexto.** Leia `session.json` (título), `candidates.json` e `transcript.jsonl` (pode estar vazio). O objetivo vem do título e da narração.
+1. **Contexto.** Leia `session.json` (título), `candidates.json`, `transcript.jsonl` (pode estar vazio) e `instrucoes.txt`, se existir. O objetivo vem do título e da narração.
 2. **Imagens.** Leia primeiro os recortes (`crops/<id>.png`) dos candidatos sem as flags `noise` ou `no_change`, e um print de contexto (`crops/<id>_ctx.png`) por janela. Leia os demais só quando precisar.
 3. **Escreva `steps.json`:**
    ```json
@@ -34,6 +38,7 @@ Você está na **pasta de uma sessão** do screenManual. O operador gravou um pr
     "descartados":[{"id":"c007","motivo":"clique acidental, desfeito com Esc"}]}
    ```
    - `imagem` é o id de um candidato **com** `crop`, ou `null`.
+   - **Imagem só quando necessário:** use quando ela ajuda a achar o elemento (menu, aba, botão no meio de outros) ou a conferir o resultado. Passos óbvios pelo texto, como pressionar **Enter**, clicar em **OK** ou **Apply** logo após o passo anterior, ou digitar num campo que a imagem anterior já mostra, ficam com `"imagem": null`.
    - Todo candidato relevante entra em algum passo ou em `descartados`, com o motivo.
 4. **Renderize, confira e publique.** Rode `screenmanual-cli render`. Se der erro, corrija o `steps.json` e repita. Com o render ok, **antes do primeiro `publish`**, leia `manual.md` e as imagens em `img/` e confira contra "Dados sensíveis" (abaixo). Se achar algo, rode `screenmanual-cli redact` no recorte em `crops/`, troque a imagem ou ajuste o texto, e rode `render` de novo (o que é publicado fica no Outline, em anexos antigos e no histórico do documento). Só então rode `screenmanual-cli publish`, que devolve `{"url","revision","status"}`.
 5. **Valide o publicado.** Rode `screenmanual-cli fetch`. Leia `published/manual.md` e as imagens em `published/img/`, e confira:
