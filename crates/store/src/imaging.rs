@@ -105,6 +105,24 @@ fn draw_rect(img: &mut RgbaImage, r: Rect, dx: i32, dy: i32) {
     }
 }
 
+/// Tarja preta em `x,y,w,h` (pixels do recorte), com `margin` px a mais de cada lado (spec §7.3, `redact`).
+pub fn redact(path: &Path, x: u32, y: u32, w: u32, h: u32, margin: u32) -> anyhow::Result<()> {
+    let mut img = image::open(path)
+        .with_context(|| format!("falha ao abrir {}", path.display()))?
+        .to_rgba8();
+    let (iw, ih) = img.dimensions();
+    let (x0, y0) = (x.saturating_sub(margin), y.saturating_sub(margin));
+    let x1 = x.saturating_add(w).saturating_add(margin).min(iw);
+    let y1 = y.saturating_add(h).saturating_add(margin).min(ih);
+    for yy in y0..y1 {
+        for xx in x0..x1 {
+            img.put_pixel(xx, yy, Rgba([0, 0, 0, 255]));
+        }
+    }
+    img.save(path)
+        .with_context(|| format!("falha ao gravar {}", path.display()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,5 +273,32 @@ mod tests {
         assert!(dir.join("crops").join("c001.png").exists());
         assert!(!dir.join("crops").join("c002.png").exists());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn redact_paints_the_rect_plus_margin_and_clamps_to_the_image() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("smredact-{nanos}.png"));
+        RgbaImage::from_pixel(100, 50, WHITE).save(&path).unwrap();
+        redact(&path, 10, 10, 20, 5, 6).unwrap();
+        let img = image::open(&path).unwrap().to_rgba8();
+        let black = Rgba([0, 0, 0, 255]);
+        assert_eq!(
+            *img.get_pixel(4, 4),
+            black,
+            "margem de 6 px antes do retângulo"
+        );
+        assert_eq!(*img.get_pixel(35, 20), black, "margem depois do retângulo");
+        assert_eq!(*img.get_pixel(3, 4), WHITE);
+        assert_eq!(*img.get_pixel(36, 20), WHITE);
+        redact(&path, 90, 40, 500, 500, 6).unwrap(); // passa da borda: recorta, sem pânico
+        assert_eq!(
+            *image::open(&path).unwrap().to_rgba8().get_pixel(99, 49),
+            black
+        );
+        std::fs::remove_file(path).unwrap();
     }
 }

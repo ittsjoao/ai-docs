@@ -109,6 +109,11 @@ fn inside(dir: &Path, rel: &str) -> Result<PathBuf> {
     Ok(dir.join(p))
 }
 
+/// Resolve um caminho relativo dentro da pasta da sessão, recusando `..`, raiz e unidade.
+pub fn session_path(dir: &Path, rel: &str) -> Result<PathBuf> {
+    inside(dir, rel)
+}
+
 fn remove_if_exists<F>(path: &Path, remove: F) -> Result<()>
 where
     F: Fn(&Path) -> std::io::Result<()>,
@@ -597,5 +602,18 @@ mod tests {
         assert_eq!(rfc3339_utc(0), "1970-01-01T00:00:00Z");
         assert_eq!(rfc3339_utc(951_782_400), "2000-02-29T00:00:00Z");
         assert_eq!(rfc3339_utc(1_790_776_985), "2026-09-30T14:03:05Z");
+    }
+
+    #[test]
+    fn session_path_is_the_public_face_of_inside() {
+        let dir = Path::new("sessao");
+        assert_eq!(
+            session_path(dir, "crops/c001.png").unwrap(),
+            dir.join("crops/c001.png")
+        );
+        assert!(session_path(dir, "../fora.png")
+            .unwrap_err()
+            .to_string()
+            .contains("fora da pasta"));
     }
 }

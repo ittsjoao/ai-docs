@@ -2,5 +2,5 @@
 mod fs_store;
 mod imaging;
 
-pub use fs_store::{utc_now_rfc3339, FsStore};
-pub use imaging::ImageCrops;
+pub use fs_store::{session_path, utc_now_rfc3339, FsStore};
+pub use imaging::{redact, ImageCrops};
