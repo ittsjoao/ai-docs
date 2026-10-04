@@ -210,3 +210,30 @@ fn redact_only_touches_crops() {
         assert_ne!(code, 0, "{path} {rect}");
     }
 }
+
+#[test]
+fn redact_blocks_traversal_and_accepts_backslash() {
+    let dir = session("redact_bs", "c001");
+    let antes = std::fs::read(dir.join("session.json")).unwrap();
+    let (code, _) = run(
+        &[
+            "redact".into(),
+            "crops/../session.json".into(),
+            "1,1,5,5".into(),
+        ],
+        &dir,
+        no_wiki,
+    );
+    assert_ne!(code, 0);
+    assert_eq!(std::fs::read(dir.join("session.json")).unwrap(), antes);
+    let (code, out) = run(
+        &[
+            "redact".into(),
+            "crops\\c001.png".into(),
+            "10,10,20,20".into(),
+        ],
+        &dir,
+        no_wiki,
+    );
+    assert_eq!(code, 0, "{out}");
+}

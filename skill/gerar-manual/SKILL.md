@@ -14,17 +14,17 @@ Você está na **pasta de uma sessão** do screenManual. O operador gravou um pr
   - `screenmanual-cli render`
   - `screenmanual-cli publish`
   - `screenmanual-cli fetch`
-  - `screenmanual-cli redact <crops/arquivo.png> <x,y,w,h>`
+  - `screenmanual-cli redact <crops/arquivo.png> <x,y,w,h>` (retângulo em números sem espaços, ex.: `10,20,200,40`; no Windows PowerShell 5.1, `10, 20, 200, 40` vira quatro argumentos)
 - O resultado de cada comando vem no stdout e no código de saída:
   - `0` = ok;
-  - `1` = erro (a mensagem diz o que corrigir);
+  - `1` = erro. Se a mensagem for sobre o `steps.json` ou uma imagem, corrija e repita. Se não for (rede, token ou variável `OUTLINE_*`, Outline inacessível, documento não encontrado), **pare sem escrever `result.json`**: o app reporta o erro;
   - `2` = uso incorreto;
   - `3` = o documento foi editado à mão no Outline. **Pare**, não publique, e escreva `result.json` com `url` e `revision` lidos do `publish.json`, `rodadas` com as correções já feitas, e `validacao` com `{"tipo":"editado_manualmente","detalhe":"<mensagem do CLI>"}`.
 
 
 ## Modo `gerar`
 
-1. **Contexto.** Leia `session.json` (título e objetivo), `candidates.json` e `transcript.jsonl` (pode estar vazio).
+1. **Contexto.** Leia `session.json` (título), `candidates.json` e `transcript.jsonl` (pode estar vazio). O objetivo vem do título e da narração.
 2. **Imagens.** Leia primeiro os recortes (`crops/<id>.png`) dos candidatos sem as flags `noise` ou `no_change`, e um print de contexto (`crops/<id>_ctx.png`) por janela. Leia os demais só quando precisar.
 3. **Escreva `steps.json`:**
    ```json
@@ -35,7 +35,7 @@ Você está na **pasta de uma sessão** do screenManual. O operador gravou um pr
    ```
    - `imagem` é o id de um candidato **com** `crop`, ou `null`.
    - Todo candidato relevante entra em algum passo ou em `descartados`, com o motivo.
-4. **Publique.** Rode `screenmanual-cli render`. Se der erro, corrija o `steps.json` e repita. Depois rode `screenmanual-cli publish`, que devolve `{"url","revision","status"}`.
+4. **Renderize, confira e publique.** Rode `screenmanual-cli render`. Se der erro, corrija o `steps.json` e repita. Com o render ok, **antes do primeiro `publish`**, leia `manual.md` e as imagens em `img/` e confira contra "Dados sensíveis" (abaixo). Se achar algo, rode `screenmanual-cli redact` no recorte em `crops/`, troque a imagem ou ajuste o texto, e rode `render` de novo (o que é publicado fica no Outline, em anexos antigos e no histórico do documento). Só então rode `screenmanual-cli publish`, que devolve `{"url","revision","status"}`.
 5. **Valide o publicado.** Rode `screenmanual-cli fetch`. Leia `published/manual.md` e as imagens em `published/img/`, e confira:
    - as imagens estão íntegras e `faltando` e `divergentes` vieram vazios;
    - cada passo condiz com o recorte e com a ação registrada;
@@ -75,6 +75,6 @@ Nada destes itens pode aparecer, nem no texto nem nas imagens publicadas:
 - **senhas, tokens e usuários de administrador** visíveis em campos ou títulos (ex.: `usuario@10.10.30.1:porta` no título de uma janela);
 - **MACs, IPs internos e públicos (IPv4/IPv6)** e listas de equipamentos da rede, além do necessário para o passo. Prefira tarjar as linhas que não fazem parte da ação;
 - **termos digitados que aparecem em títulos de janela ou `ancestors`**: uma busca no título do navegador, um comando no título do cmd. Não copie esses títulos para o texto;
-- **janelas de fundo nos prints de contexto** (`_ctx`): gerenciador de senhas, internet banking, e-mail pessoal ou qualquer janela que não faça parte do procedimento. Se aparecerem, use o recorte normal no lugar do de contexto ou tarje a região.
+- **prints de contexto (`_ctx`)**: o `render` nunca os publica, só os `crop`. Não descreva nem copie para o texto nada que apareça só no fundo deles (gerenciador de senhas, internet banking, e-mail pessoal, janelas fora do procedimento).
 
 Registre cada tarja em `result.json` → `validacao`, com `{"tipo":"redigido","detalhe":"…"}`.

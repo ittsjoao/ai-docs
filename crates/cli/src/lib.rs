@@ -103,6 +103,8 @@ fn render_cmd(store: &FsStore, id: &str) -> anyhow::Result<String> {
 }
 
 fn redact_cmd(dir: &Path, crop: &str, rect: &str) -> anyhow::Result<String> {
+    let crop = crop.replace('\\', "/"); // PowerShell: crops\c001.png
+    let crop = crop.as_str();
     if !crop.starts_with("crops/") {
         anyhow::bail!("redact só tarja arquivos em crops/ (o render copia para img/): {crop}");
     }

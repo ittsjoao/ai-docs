@@ -54,6 +54,21 @@ pub(crate) fn parse_collections(data: &Value) -> Vec<Collection> {
         .collect()
 }
 
+/// Origem (`https://host:porta`) de uma URL, sem caminho nem query (que podem ter assinatura).
+pub(crate) fn host_of(url: &str) -> &str {
+    let after = url.find("://").map_or(0, |i| i + 3);
+    let end = url[after..]
+        .find(['/', '?', '#'])
+        .map_or(url.len(), |i| after + i);
+    &url[..end]
+}
+
+/// `<o que> falhou (<status>): <até 300 caracteres do corpo>`.
+pub(crate) fn http_failure(what: &str, status: u16, body: &str) -> String {
+    let corpo: String = body.trim().chars().take(300).collect();
+    format!("{what} falhou ({status}): {corpo}")
+}
+
 pub(crate) fn api_error(method: &str, status: u16, body: &Value) -> String {
     if status == 401 {
         return "token do Outline inválido ou expirado (OUTLINE_API_TOKEN)".to_string();
@@ -147,7 +162,16 @@ impl Wiki for Outline {
             .send()
             .with_context(|| format!("falha ao enviar a imagem {name} ao Outline"))?;
         if !resp.status().is_success() {
-            bail!("upload da imagem {name} falhou ({})", resp.status());
+            let status = resp.status();
+            let corpo = resp.text().unwrap_or_default();
+            bail!(
+                "{}",
+                http_failure(
+                    &format!("upload da imagem {name} para {}", host_of(&upload_url)),
+                    status.as_u16(),
+                    &corpo
+                )
+            );
         }
         Ok(data["attachment"]["id"]
             .as_str()
@@ -198,9 +222,15 @@ impl Wiki for Outline {
             .send()
             .with_context(|| format!("falha ao baixar o anexo {attachment_id}"))?;
         if !resp.status().is_success() {
+            let status = resp.status();
+            let corpo = resp.text().unwrap_or_default();
             bail!(
-                "download do anexo {attachment_id} falhou ({})",
-                resp.status()
+                "{}",
+                http_failure(
+                    &format!("download do anexo {attachment_id}"),
+                    status.as_u16(),
+                    &corpo
+                )
             );
         }
         Ok(resp.bytes()?.to_vec())
@@ -278,6 +308,30 @@ mod tests {
             "Outline documents.create falhou (400): collectionId required"
         );
         assert!(api_error("x", 500, &serde_json::Value::Null).contains("sem detalhes"));
+    }
+
+    #[test]
+    fn http_failures_carry_a_truncated_body() {
+        let longo = "é".repeat(500);
+        let msg = http_failure("download do anexo a1", 403, &longo);
+        assert_eq!(
+            msg,
+            format!("download do anexo a1 falhou (403): {}", "é".repeat(300))
+        );
+        assert_eq!(
+            http_failure(
+                "x",
+                500,
+                " AccessDenied 
+"
+            ),
+            "x falhou (500): AccessDenied"
+        );
+        assert_eq!(
+            host_of("https://s3.x.com:9000/bucket/k?X-Amz-Signature=abc"),
+            "https://s3.x.com:9000"
+        );
+        assert_eq!(host_of("https://wiki.x"), "https://wiki.x");
     }
 
     #[test]
