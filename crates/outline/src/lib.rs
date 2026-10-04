@@ -21,6 +21,14 @@ pub(crate) fn absolute(base: &str, url: &str) -> String {
     }
 }
 
+/// Diz se a URL pertence ao próprio servidor (mesma origem), sem aceitar prefixos como `wiki.x.evil.com`.
+pub(crate) fn same_server(base: &str, url: &str) -> bool {
+    url == base
+        || url
+            .strip_prefix(base)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
 pub(crate) fn doc_info(base: &str, data: &Value) -> Result<DocInfo> {
     Ok(DocInfo {
         id: data["id"]
@@ -132,7 +140,7 @@ impl Wiki for Outline {
                 .mime_str("image/png")?,
         );
         let mut req = self.http.post(&upload_url).multipart(form);
-        if upload_url.starts_with(&self.base) {
+        if same_server(&self.base, &upload_url) {
             req = req.bearer_auth(&self.token); // storage local: mesmo servidor; S3 pré-assinado nunca recebe o token
         }
         let resp = req
@@ -214,6 +222,18 @@ mod tests {
             absolute("https://wiki.x", "https://s3.aws/up?sig=1"),
             "https://s3.aws/up?sig=1"
         );
+    }
+
+    #[test]
+    fn same_server_is_not_a_string_prefix() {
+        assert!(same_server(
+            "https://wiki.x",
+            "https://wiki.x/api/files.create"
+        ));
+        assert!(same_server("https://wiki.x", "https://wiki.x"));
+        assert!(!same_server("https://wiki.x", "https://wiki.x.evil.com/up"));
+        assert!(!same_server("https://wiki.x", "https://wiki.xyz/up"));
+        assert!(!same_server("https://wiki.x", "https://s3.aws/up?sig=1"));
     }
 
     #[test]
