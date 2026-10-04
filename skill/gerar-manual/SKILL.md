@@ -19,7 +19,8 @@ Você está na **pasta de uma sessão** do screenManual. O operador gravou um pr
   - `0` = ok;
   - `1` = erro (a mensagem diz o que corrigir);
   - `2` = uso incorreto;
-  - `3` = o documento foi editado à mão no Outline. **Pare**, escreva `result.json` com a validação `{"tipo":"editado_manualmente", …}` e não publique.
+  - `3` = o documento foi editado à mão no Outline. **Pare**, não publique, e escreva `result.json` com `url` e `revision` lidos do `publish.json`, `rodadas` com as correções já feitas, e `validacao` com `{"tipo":"editado_manualmente","detalhe":"<mensagem do CLI>"}`.
+
 
 ## Modo `gerar`
 
@@ -41,7 +42,7 @@ Você está na **pasta de uma sessão** do screenManual. O operador gravou um pr
    - nenhum candidato relevante ficou de fora, e a ordem está correta;
    - **dados sensíveis** (lista abaixo).
 
-   Para corrigir, use `screenmanual-cli redact` no recorte em `crops/`, troque a imagem ou ajuste o texto. Depois rode `render` e `publish` de novo. **No máximo 2 rodadas de correção.**
+   Para corrigir, use `screenmanual-cli redact` no recorte em `crops/`, troque a imagem ou ajuste o texto. Depois rode `render` e `publish` de novo. **No máximo 2 rodadas de correção.** Se após a 2ª rodada ainda restar algum problema (ex.: dado sensível visível), registre-o em `validacao` com `{"tipo":"pendente","detalhe":"…"}`; o app mostra como aviso do rascunho.
 6. **Escreva `result.json`:**
    ```json
    {"url":"…","revision":3,"rodadas":1,"validacao":[{"tipo":"redigido","detalhe":"c014: e-mail do cliente tarjado"}]}
@@ -72,7 +73,7 @@ Você está na **pasta de uma sessão** do screenManual. O operador gravou um pr
 Nada destes itens pode aparecer, nem no texto nem nas imagens publicadas:
 - CPF, CNPJ de terceiros, e-mails, valores, nomes de clientes;
 - **senhas, tokens e usuários de administrador** visíveis em campos ou títulos (ex.: `usuario@10.10.30.1:porta` no título de uma janela);
-- **MACs, IPs públicos (IPv6/IPv4 de provedor) e listas de equipamentos da rede**, além do necessário para o passo. Prefira tarjar as linhas que não fazem parte da ação;
+- **MACs, IPs internos e públicos (IPv4/IPv6)** e listas de equipamentos da rede, além do necessário para o passo. Prefira tarjar as linhas que não fazem parte da ação;
 - **termos digitados que aparecem em títulos de janela ou `ancestors`**: uma busca no título do navegador, um comando no título do cmd. Não copie esses títulos para o texto;
 - **janelas de fundo nos prints de contexto** (`_ctx`): gerenciador de senhas, internet banking, e-mail pessoal ou qualquer janela que não faça parte do procedimento. Se aparecerem, use o recorte normal no lugar do de contexto ou tarje a região.
 
