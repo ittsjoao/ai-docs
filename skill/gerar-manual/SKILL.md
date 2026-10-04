@@ -38,7 +38,7 @@ Se existir `instrucoes.txt` nesta pasta, leia antes de tudo, nos dois modos. É 
     "descartados":[{"id":"c007","motivo":"clique acidental, desfeito com Esc"}]}
    ```
    - `imagem` é o id de um candidato **com** `crop`, ou `null`.
-   - **Imagem só quando necessário:** use quando ela ajuda a achar o elemento (menu, aba, botão no meio de outros) ou a conferir o resultado. Passos óbvios pelo texto, como pressionar **Enter**, clicar em **OK** ou **Apply** logo após o passo anterior, ou digitar num campo que a imagem anterior já mostra, ficam com `"imagem": null`.
+   - **Imagem só quando necessário:** use quando ela ajuda a achar o elemento (menu, aba, botão no meio de outros) ou a conferir o resultado. Passos óbvios pelo texto, como pressionar **Enter**, clicar em **OK** ou **Apply** logo após o passo anterior, ou digitar num campo que a imagem anterior já mostra, ficam com `"imagem": null`. Tirar a imagem **não** é motivo para juntar passos: cada passo continua com uma ação só ("Clique em **IP**." e "Clique em **DHCP Server**." são dois passos).
    - Todo candidato relevante entra em algum passo ou em `descartados`, com o motivo.
 4. **Renderize, confira e publique.** Rode `screenmanual-cli render`. Se der erro, corrija o `steps.json` e repita. Com o render ok, **antes do primeiro `publish`**, leia `manual.md` e as imagens em `img/` e confira contra "Dados sensíveis" (abaixo). Se achar algo, rode `screenmanual-cli redact` no recorte em `crops/`, troque a imagem ou ajuste o texto, e rode `render` de novo (o que é publicado fica no Outline, em anexos antigos e no histórico do documento). Só então rode `screenmanual-cli publish`, que devolve `{"url","revision","status"}`.
 5. **Valide o publicado.** Rode `screenmanual-cli fetch`. Leia `published/manual.md` e as imagens em `published/img/`, e confira:
@@ -64,6 +64,7 @@ Se existir `instrucoes.txt` nesta pasta, leia antes de tudo, nos dois modos. É 
 - Português do Brasil, no imperativo, **uma ação por passo**.
 - O nome do elemento vai em **negrito**, exatamente como em `el.name` ou como aparece no recorte. **Nunca invente nomes.** Se `el.name` estiver errado ou vazio (apps sem UIA, `quality` `generic`/`none`), leia o rótulo no recorte.
 - Valores digitados não existem nos eventos, então descreva-os em vez de copiar: "o CNPJ do cliente".
+- Não afirme o que a tela ou a fala não dizem. Um valor visto nesta gravação é "neste exemplo", nunca "o padrão" (ex.: a porta que aparece no **Connect To** não é "a porta padrão").
 - A **fala** explica o porquê e o **evento** diz o quê. Em conflito, vale o evento.
 - A transcrição erra nomes técnicos. Corrija pelo contexto da tela: títulos de janela e rótulos nos recortes. Exemplo: "inbox" com a janela "WinBox" é **WinBox**.
 - Diretivas ditas na fala:
