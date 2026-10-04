@@ -1,6 +1,8 @@
 # Build do whisper-rs-sys no MSVC (spike, achado 1): sem isto o whisper.cpp sai sem /O2 e sem AVX2
 # (~9× mais lento). O whisper-rs-sys repassa ao CMake toda variável GGML_*/CMAKE_*.
 # Em debug ele compila como RelWithDebInfo, por isso as duas configurações.
+# Só vale para Windows/MSVC. O LLVM precisa estar em C:\Program Files\LLVM; se estiver em outro
+# lugar, defina LIBCLANG_PATH no ambiente (a variável do ambiente tem precedência sobre esta).
 [env]
 LIBCLANG_PATH = "C:\\Program Files\\LLVM\\bin"
 GGML_NATIVE = "OFF"

@@ -27,7 +27,11 @@ pub(crate) fn finish<S: SessionStore, T>(
     id: &str,
     result: CommandResult<T>,
 ) -> CommandResult<T> {
-    let message = result.as_ref().err().map(|e| e.to_string());
+    let message = result.as_ref().err().map(|e| match e {
+        // `{:#}` mostra a cadeia inteira de contextos do anyhow
+        CommandError::Unknown(inner) => format!("{inner:#}"),
+        other => other.to_string(),
+    });
     let recorded = store.set_error(id, message.as_deref());
     match result {
         Ok(v) => recorded.map(|_| v).map_err(Into::into),

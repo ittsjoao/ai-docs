@@ -151,6 +151,8 @@ impl SessionStore for FakeStore {
 pub struct FakeTranscriber {
     pub out: Result<Vec<Segment>, String>,
     pub prompts: Mutex<Vec<String>>,
+    /// Contexto anyhow externo aplicado ao erro, para testar a cadeia.
+    pub context: Option<String>,
 }
 
 impl FakeTranscriber {
@@ -158,12 +160,20 @@ impl FakeTranscriber {
         Self {
             out: Ok(out),
             prompts: Mutex::default(),
+            context: None,
         }
     }
     pub fn failing(msg: &str) -> Self {
         Self {
             out: Err(msg.to_string()),
             prompts: Mutex::default(),
+            context: None,
+        }
+    }
+    pub fn failing_with_context(msg: &str, context: &str) -> Self {
+        Self {
+            context: Some(context.to_string()),
+            ..Self::failing(msg)
         }
     }
     pub fn calls(&self) -> usize {
@@ -174,7 +184,10 @@ impl FakeTranscriber {
 impl Transcriber for FakeTranscriber {
     fn transcribe(&self, _audio: &Path, prompt: &str) -> Result<Vec<Segment>> {
         self.prompts.lock().unwrap().push(prompt.to_string());
-        self.out.clone().map_err(|e| anyhow!(e))
+        self.out.clone().map_err(|e| match &self.context {
+            Some(c) => anyhow!(e).context(c.clone()),
+            None => anyhow!(e),
+        })
     }
 }
 

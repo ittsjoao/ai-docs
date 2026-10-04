@@ -102,3 +102,20 @@ fn failure_is_recorded_on_session() {
     assert!(err.is_err());
     assert_eq!(store.get("s1").error.as_deref(), Some("modelo ausente"));
 }
+
+#[test]
+fn failure_keeps_the_whole_error_chain() {
+    let store = session(true);
+    let err = process_session(
+        &store,
+        &FakeTranscriber::failing_with_context("modelo ausente", "falha na transcrição"),
+        &FakeImaging::default(),
+        "s1",
+        &BuildConfig::default(),
+        false,
+    );
+    assert!(err.is_err());
+    let msg = store.get("s1").error.unwrap();
+    assert!(msg.contains("falha na transcrição"), "{msg}");
+    assert!(msg.contains("modelo ausente"), "{msg}");
+}

@@ -27,8 +27,15 @@ impl Sink {
         let (tx, rx) = channel::<PngJob>();
         let png_thread = std::thread::spawn(move || {
             for (path, img) in rx {
-                if let Err(e) = img.save(&path) {
+                // grava num temporário e renomeia: uma queda não deixa PNG pela metade
+                let tmp = path.with_extension("png.tmp");
+                let saved = img
+                    .save_with_format(&tmp, image::ImageFormat::Png)
+                    .map_err(|e| e.to_string())
+                    .and_then(|_| std::fs::rename(&tmp, &path).map_err(|e| e.to_string()));
+                if let Err(e) = saved {
                     eprintln!("falha ao salvar {}: {e}", path.display());
+                    let _ = std::fs::remove_file(&tmp);
                 }
             }
         });

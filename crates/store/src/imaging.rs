@@ -22,9 +22,14 @@ impl Imaging for ImageCrops {
                 eprintln!("print ausente, recorte pulado: {}", spec.source);
                 continue;
             }
-            let shot = image::open(&source)
-                .with_context(|| format!("falha ao abrir {}", spec.source))?
-                .to_rgba8();
+            let shot = match image::open(&source) {
+                Ok(img) => img.to_rgba8(),
+                Err(e) => {
+                    // ponytail: PNG truncado após uma queda não pode travar a sessão inteira
+                    eprintln!("print ilegível, recorte pulado: {} ({e})", spec.source);
+                    continue;
+                }
+            };
             let out = dir.join(&spec.out);
             if let Some(parent) = out.parent() {
                 std::fs::create_dir_all(parent)?;
@@ -217,6 +222,37 @@ mod tests {
                 .width(),
             100
         );
+        assert!(!dir.join("crops").join("c002.png").exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unreadable_shot_is_skipped_and_others_are_written() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("smimg-bad-{nanos}"));
+        std::fs::create_dir_all(dir.join("shots")).unwrap();
+        RgbaImage::from_pixel(200, 100, WHITE)
+            .save(dir.join("shots").join("a.png"))
+            .unwrap();
+        std::fs::write(dir.join("shots").join("quebrado.png"), []).unwrap();
+        let ok = spec(
+            rect(0, 0, 200, 100),
+            rect(0, 0, 100, 50),
+            Mark::Circle {
+                x: 50,
+                y: 25,
+                r: 18,
+            },
+            1280,
+        );
+        let mut broken = ok.clone();
+        broken.source = "shots/quebrado.png".into();
+        broken.out = "crops/c002.png".into();
+        ImageCrops.render_crops(&dir, &[broken, ok]).unwrap();
+        assert!(dir.join("crops").join("c001.png").exists());
         assert!(!dir.join("crops").join("c002.png").exists());
         std::fs::remove_dir_all(dir).unwrap();
     }
