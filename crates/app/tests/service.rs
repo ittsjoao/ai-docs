@@ -209,3 +209,12 @@ fn erros_viram_kinds_que_a_ui_entende() {
         serde_json::json!({"kind": "ocupado", "mensagem": "x"})
     );
 }
+
+#[test]
+fn processar_sessao_gravando_e_ocupado() {
+    let (app, _rx) = app("proc-gravando");
+    let id = app.gravar("A", QUANDO).unwrap();
+    assert_eq!(app.processar(&id, false).unwrap_err().kind, "ocupado");
+    assert_eq!(app.parar().unwrap(), id);
+    assert_eq!(status(&app, &id), SessionStatus::Ready);
+}

@@ -458,16 +458,24 @@ impl<D: Deps> App<D> {
 
     /// Para e processa (D10).
     pub fn parar(&self) -> Result<String, ApiError> {
-        let id = self.parar_gravacao()?;
-        self.processar(&id, false)?;
+        // Recording -> Processing sem instante livre: a sessão nunca fica sem Activity.
+        let id = self.parar_gravacao(Some(Activity::Processing))?;
+        let r = self.processar_dentro(&id, false);
+        self.liberar(&id, r.as_ref().err(), None);
+        r?;
         Ok(id)
     }
 
-    fn parar_gravacao(&self) -> Result<String, ApiError> {
+    /// Para a gravação; `depois` é a Activity que substitui `Recording` sob o mesmo lock
+    /// (`None` = sem Activity). Se o stop falhar, a sessão é liberada.
+    fn parar_gravacao(&self, depois: Option<Activity>) -> Result<String, ApiError> {
         let g = {
             let mut st = self.st();
             let g = st.gravacao.take().ok_or_else(Self::sem_gravacao)?;
-            st.atividade.remove(&g.id);
+            match depois {
+                Some(a) => st.atividade.insert(g.id.clone(), a),
+                None => st.atividade.remove(&g.id),
+            };
             g
         };
         (self.emit)(Evento::Gravacao {
@@ -475,9 +483,17 @@ impl<D: Deps> App<D> {
             id: g.id.clone(),
         });
         let r = stop_recording(self.deps.store(), &g.id, g.handle);
+        if r.is_err() {
+            self.st().atividade.remove(&g.id);
+        }
         (self.emit)(Evento::Sessao { id: g.id.clone() });
         r?;
         Ok(g.id)
+    }
+
+    #[allow(dead_code)] // usado pelo encerrar (Task 3): para sem processar
+    fn parar_sem_processar(&self) -> Result<String, ApiError> {
+        self.parar_gravacao(None)
     }
 
     fn ocupar(&self, id: &str, a: Activity) -> Result<(), ApiError> {
