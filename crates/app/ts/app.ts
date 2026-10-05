@@ -142,6 +142,22 @@ async function executar(id: string, acao: (sobrescrever: boolean) => Promise<unk
   await carregar();
 }
 
+/** Desabilita os botões do form enquanto a chamada está em andamento (evita envio duplo). */
+async function travar(f: HTMLFormElement, fn: () => Promise<void>): Promise<void> {
+  const bs = [...f.querySelectorAll("button")];
+  bs.forEach((b) => (b.disabled = true));
+  try {
+    await fn();
+  } finally {
+    bs.forEach((b) => (b.disabled = false));
+  }
+}
+
+/** Esvazia o form (no DOM atual) para o trocar() não restaurar o texto enviado. */
+function limparForm(nome: string): void {
+  document.querySelector<HTMLFormElement>(`form[data-form="${nome}"]`)?.reset();
+}
+
 function perguntar(texto: string): Promise<boolean> {
   const dlg = $<HTMLDialogElement>("#pergunta");
   dlg.querySelector("p")!.textContent = texto;
@@ -194,17 +210,24 @@ function renderLista(): void {
 function trocar(p: HTMLElement, html: string): void {
   const chave = `${st.tela}:${st.sel}`;
   const campos = (raiz: HTMLElement) =>
-    [...raiz.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("[name]")]
-      .filter((e) => e.type !== "radio" && e.type !== "checkbox");
-  const antes = new Map<string, string>();
+    [...raiz.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("[name]")];
+  const chaveCampo = (e: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement) =>
+    `${e.closest("form")?.dataset.form}:${e.name}` + (e.type === "radio" ? `:${e.value}` : "");
+  const marcavel = (e: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement) =>
+    e.type === "radio" || e.type === "checkbox";
+  const antes = new Map<string, string | boolean>();
   if (p.dataset.chave === chave) {
-    for (const e of campos(p)) antes.set(`${e.closest("form")?.dataset.form}:${e.name}`, e.value);
+    for (const e of campos(p)) {
+      antes.set(chaveCampo(e), marcavel(e) ? (e as HTMLInputElement).checked : e.value);
+    }
   }
   p.innerHTML = html;
   p.dataset.chave = chave;
   for (const e of campos(p)) {
-    const v = antes.get(`${e.closest("form")?.dataset.form}:${e.name}`);
-    if (v !== undefined) e.value = v;
+    const v = antes.get(chaveCampo(e));
+    if (v === undefined) continue;
+    if (marcavel(e)) (e as HTMLInputElement).checked = v as boolean;
+    else e.value = v as string;
   }
 }
 
@@ -226,10 +249,11 @@ function htmlAcoes(d: Detalhe): string {
   const semClaude = !!st.inicio?.claude_erro;
   const outra = !!st.inicio?.gerando && st.inicio.gerando !== d.id;
   const travado = semClaude || outra ? "disabled" : "";
-  const dica = outra ? `<p class="dica">Aguarde a outra geração terminar.</p>`
+  const tituloOutra = st.sessoes.find((x) => x.id === st.inicio?.gerando)?.title ?? "outra sessão";
+  const dica = outra ? `<p class="dica">Aguarde a geração de ${esc(tituloOutra)} terminar.</p>`
     : semClaude ? `<p class="dica">Instale o Claude Code para gerar manuais.</p>` : "";
   switch (d.status) {
-    case "recording": return `<p>Gravando… use ⏸ / ■ no topo, na bandeja ou Ctrl+Alt+P / Ctrl+Alt+M.</p>`;
+    case "recording": return `<p>Gravando… use ⏸ / ■ no topo ou na bandeja. Ctrl+Alt+P pausa/retoma; Ctrl+Alt+M marca um passo.</p>`;
     case "processing": return prog;
     case "generating": return prog + `<button data-acao="cancelar" class="sec">Cancelar</button>`;
     case "interrupted":
@@ -273,7 +297,8 @@ function htmlConfig(): string {
   const titulo = i.configurado ? `<h2>Configurações</h2>` : `<h2>Bem-vindo ao screenManual</h2><p>Conecte o Outline para começar.</p>`;
   const modelos = MODELOS.map(([m, rotulo]) => {
     const baixado = i.modelos.find((x) => x.modelo === m)?.baixado;
-    const estado = st.download[m] ? `baixando ${st.download[m]}` : baixado ? "baixado" : "não baixado";
+    const pct = st.download[m];
+    const estado = pct ? `baixando ${pct} <progress max="100" value="${parseInt(pct, 10) || 0}"></progress>` : baixado ? "baixado" : "não baixado";
     return `<label class="radio"><input type="radio" name="modelo" value="${m}" ${c.transcricao.modelo === m ? "checked" : ""}> ${rotulo} <em>(${estado})</em></label>`;
   }).join("");
   return `${titulo}
@@ -304,6 +329,7 @@ document.addEventListener("click", async (ev) => {
   const id = st.det?.id ?? "";
   switch (b.dataset.acao) {
     case "nova": return abrirTitulo();
+    case "cancelar-titulo": $<HTMLDialogElement>("#titulo").close(); return;
     case "pausar": return tentar(() => invoke("pausar"));
     case "parar": return tentar(() => invoke("parar"));
     case "cancelar": return tentar(() => invoke("cancelar"));
@@ -320,6 +346,14 @@ document.addEventListener("click", async (ev) => {
   }
 });
 
+document.addEventListener("change", (ev) => {
+  const t = ev.target as HTMLInputElement;
+  if (t.name === "modelo" && t.type === "radio") {
+    baixar(t.value as Modelo);
+    renderPainel();
+  }
+});
+
 document.addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const f = ev.target as HTMLFormElement;
@@ -329,7 +363,6 @@ document.addEventListener("submit", async (ev) => {
   switch (f.dataset.form) {
     case "titulo": {
       $<HTMLDialogElement>("#titulo").close();
-      if ((ev as SubmitEvent).submitter?.getAttribute("value") !== "ok") return;
       const titulo = s("titulo");
       f.reset();
       return tentar(async () => {
@@ -341,14 +374,16 @@ document.addEventListener("submit", async (ev) => {
     case "gerar": {
       const colecao = s("colecao");
       const instrucao = s("instrucao");
-      return executar(id, (sobrescrever) => invoke("gerar", { id, colecao, instrucao, sobrescrever }));
+      return travar(f, () => executar(id, (sobrescrever) => invoke("gerar", { id, colecao, instrucao, sobrescrever })));
     }
     case "melhoria": {
       if (st.det?.status === "published" &&
         !(await perguntar("Este manual já está publicado. A melhoria altera o documento publicado. Continuar?"))) return;
       const texto = s("texto");
       const instrucao = s("instrucao");
-      return executar(id, (sobrescrever) => invoke("melhorar", { id, texto, instrucao, sobrescrever }));
+      await travar(f, () => executar(id, (sobrescrever) => invoke("melhorar", { id, texto, instrucao, sobrescrever })));
+      if (!st.aviso && st.det?.id === id) limparForm("melhoria");
+      return;
     }
     case "outline":
       return tentar(async () => {
