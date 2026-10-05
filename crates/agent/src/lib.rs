@@ -223,7 +223,8 @@ pub struct ClaudeAgent {
     /// `--model`; vazio = padrão da conta.
     pub model: String,
     pub timeout: Duration,
-    /// Cancelar da UI; `run` zera ao começar.
+    /// Cancelar da UI. O chamador passa uma flag nova a cada execução; uma flag já ligada
+    /// cancela antes de começar.
     pub cancel: Arc<AtomicBool>,
 }
 
@@ -276,7 +277,9 @@ impl ManualAgent for ClaudeAgent {
     ) -> PortResult<AgentResult> {
         let dir = long_dir(dir);
         let dir = dir.as_path();
-        self.cancel.store(false, Ordering::Relaxed);
+        if self.cancel.load(Ordering::Relaxed) {
+            bail!("geração cancelada");
+        }
         let result_path = dir.join("result.json");
         match std::fs::remove_file(&result_path) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => {

@@ -138,6 +138,23 @@ fn timeout_kills_claude() {
 }
 
 #[test]
+fn cancel_set_before_run_cancels_without_starting_claude() {
+    let a = agent();
+    a.cancel.store(true, Ordering::Relaxed);
+    let dir = session("precancel", "sleep");
+    std::fs::write(dir.join("result.json"), STALE).unwrap();
+    let started = Instant::now();
+    let err = run(&a, &dir, AgentMode::Gerar).0.unwrap_err().to_string();
+    assert!(err.contains("cancelada"), "{err}");
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(
+        !dir.join("logs").exists(),
+        "claude não deve ter sido iniciado"
+    );
+    assert!(dir.join("result.json").exists(), "nada foi apagado");
+}
+
+#[test]
 fn cancel_kills_claude() {
     let a = agent();
     let cancel = a.cancel.clone();
