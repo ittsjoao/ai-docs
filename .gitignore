@@ -3,3 +3,6 @@ target/
 spike/
 spike_out/
 docs/
+crates/app/node_modules/
+crates/app/gen/
+crates/app/ui/app.js

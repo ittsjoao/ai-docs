@@ -8,13 +8,26 @@ rust-version.workspace = true
 name = "screenmanual_app"
 path = "src/lib.rs"
 
+[[bin]]
+name = "screenManual"
+path = "src/main.rs"
+
 [dependencies]
 screenmanual-core = { path = "../core" }
 screenmanual-settings = { path = "../settings" }
 screenmanual-agent = { path = "../agent" }
+screenmanual-store = { path = "../store" }
+screenmanual-capture = { path = "../capture" }
+screenmanual-whisper = { path = "../whisper" }
+screenmanual-outline = { path = "../outline" }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-notification = "2"
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
-[dev-dependencies]
-screenmanual-store = { path = "../store" }
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
