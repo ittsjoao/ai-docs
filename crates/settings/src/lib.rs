@@ -1,5 +1,6 @@
 //! Configuração do app: caminhos, config.json e token do Outline (spec §6.1.8, §8, D14).
 mod models;
+pub use models::{ensure_model, model_info, save_verified, ModelInfo};
 
 use std::path::{Path, PathBuf};
 
