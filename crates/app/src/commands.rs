@@ -144,10 +144,19 @@ pub fn abrir_link(app: AppHandle, url: String) -> Result<(), ApiError> {
 
 #[tauri::command]
 pub fn abrir_pasta(app: AppHandle, st: St<'_>, id: String) -> Result<(), ApiError> {
-    if id.is_empty() || id.contains(['/', '\\']) || id.contains("..") {
-        return Err(ApiError::new("estado_invalido", "sessão inválida"));
+    let invalido = || ApiError::new("estado_invalido", "sessão inválida");
+    // Um único componente normal: recusa "C:", "..", barras e caminhos absolutos.
+    let mut comps = std::path::Path::new(&id).components();
+    if !matches!(
+        (comps.next(), comps.next()),
+        (Some(std::path::Component::Normal(_)), None)
+    ) {
+        return Err(invalido());
     }
     let dir = st.deps().store().dir(&id);
+    if !dir.is_dir() {
+        return Err(invalido());
+    }
     app.opener()
         .open_path(dir.display().to_string(), None::<&str>)
         .map_err(falha)

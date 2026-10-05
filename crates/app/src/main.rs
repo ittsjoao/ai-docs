@@ -3,6 +3,7 @@
 mod commands;
 mod real;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use screenmanual_app::{App, EstadoGravacao, Evento};
@@ -12,6 +13,9 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
+
+/// Atalhos de gravação registrados?
+static ATALHOS: AtomicBool = AtomicBool::new(false);
 
 pub type AppState = Arc<App<real::RealDeps>>;
 
@@ -81,10 +85,14 @@ fn ao_evento(app: &AppHandle, ev: Evento) {
                 let _ = tray.set_icon(Some(icone(*estado)));
             }
             let atalhos = app.global_shortcut();
+            // Sem `is_registered`/`unregister_all`: o plugin chama o handler com o lock dos atalhos
+            // preso, e `unregister_all` segura esse lock esperando a thread principal.
             if *estado == EstadoGravacao::Parado {
-                let _ = atalhos.unregister_all();
+                if ATALHOS.swap(false, Ordering::SeqCst) {
+                    let _ = atalhos.unregister_multiple([atalho_pausar(), atalho_marcar()]);
+                }
                 mostrar(app);
-            } else if !atalhos.is_registered(atalho_pausar()) {
+            } else if !ATALHOS.swap(true, Ordering::SeqCst) {
                 let _ = atalhos.register(atalho_pausar());
                 let _ = atalhos.register(atalho_marcar());
             }
@@ -134,7 +142,10 @@ fn criar_bandeja(app: &AppHandle) -> tauri::Result<()> {
                 let _ = app.emit("app", serde_json::json!({"evento": "pedir_titulo"}));
             }
             "pausar" => {
-                let _ = estado(app).pausar();
+                let st = estado(app);
+                std::thread::spawn(move || {
+                    let _ = st.pausar();
+                });
             }
             "parar" => {
                 let st = estado(app);
@@ -174,11 +185,16 @@ fn main() {
                     if ev.state() != ShortcutState::Pressed {
                         return;
                     }
+                    // Em outra thread: o plugin chama este handler com o lock dos atalhos preso.
                     let st = estado(app);
                     if atalho == &atalho_pausar() {
-                        let _ = st.pausar();
+                        std::thread::spawn(move || {
+                            let _ = st.pausar();
+                        });
                     } else if atalho == &atalho_marcar() {
-                        let _ = st.marcar();
+                        std::thread::spawn(move || {
+                            let _ = st.marcar();
+                        });
                     }
                 })
                 .build(),
