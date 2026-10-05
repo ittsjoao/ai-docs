@@ -1,10 +1,15 @@
 //! Adapter `ManualAgent`: roda o Claude Code headless (`claude -p`) na pasta da sessão (spec §7.2).
 use std::ffi::OsStr;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{channel, RecvTimeoutError};
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use anyhow::{bail, Result};
-use screenmanual_core::ports::AgentMode;
+use anyhow::{bail, Context, Result};
+use screenmanual_core::ports::{AgentMode, AgentResult, ManualAgent, PortResult};
 use serde_json::Value;
 
 /// Skill embutida; `install_skill` a grava em `~/.claude/skills/gerar-manual/` (spec §8).
@@ -160,7 +165,6 @@ fn describe(tool: &str, input: &Value) -> Option<String> {
     }
 }
 
-#[allow(dead_code)] // usado pelo ClaudeAgent (Task 4)
 fn is_login_error(text: &str) -> bool {
     let t = text.to_lowercase();
     [
@@ -172,6 +176,193 @@ fn is_login_error(text: &str) -> bool {
     ]
     .iter()
     .any(|k| t.contains(k))
+}
+
+/// Adapter da porta `ManualAgent` (spec §7.2).
+pub struct ClaudeAgent {
+    /// `claude.exe`/`claude.cmd` (veja `find_claude`).
+    pub claude: PathBuf,
+    /// Pasta do `screenmanual-cli.exe`; vai na frente do PATH do Claude.
+    pub cli_dir: PathBuf,
+    pub outline_url: String,
+    pub outline_token: String,
+    /// `--model`; vazio = padrão da conta.
+    pub model: String,
+    pub timeout: Duration,
+    /// Cancelar da UI; `run` zera ao começar.
+    pub cancel: Arc<AtomicBool>,
+}
+
+impl ClaudeAgent {
+    /// Padrões do spec: 15 min de limite, sem cancelamento pedido.
+    pub fn new(
+        claude: PathBuf,
+        cli_dir: PathBuf,
+        outline_url: &str,
+        outline_token: &str,
+        model: &str,
+    ) -> Self {
+        Self {
+            claude,
+            cli_dir,
+            outline_url: outline_url.to_string(),
+            outline_token: outline_token.to_string(),
+            model: model.to_string(),
+            timeout: Duration::from_secs(15 * 60),
+            cancel: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
+impl ManualAgent for ClaudeAgent {
+    fn run(
+        &self,
+        dir: &Path,
+        mode: AgentMode,
+        progress: &mut dyn FnMut(&str),
+    ) -> PortResult<AgentResult> {
+        self.cancel.store(false, Ordering::Relaxed);
+        let result_path = dir.join("result.json");
+        match std::fs::remove_file(&result_path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                return Err(e).context("falha ao apagar o result.json anterior");
+            }
+            _ => {}
+        }
+        let logs = dir.join("logs");
+        std::fs::create_dir_all(&logs)
+            .with_context(|| format!("falha ao criar {}", logs.display()))?;
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let mut log = std::fs::File::create(logs.join(format!("claude-{stamp}.jsonl")))
+            .context("falha ao criar o log do Claude")?;
+
+        let inherited = std::env::var_os("PATH").unwrap_or_default();
+        let path = std::env::join_paths(
+            std::iter::once(self.cli_dir.clone()).chain(std::env::split_paths(&inherited)),
+        )
+        .context("PATH inválido")?;
+        let mut child = no_window(
+            Command::new(&self.claude)
+                .args(claude_args(mode, &self.model))
+                .current_dir(dir)
+                .env("PATH", path)
+                .env("OUTLINE_URL", &self.outline_url)
+                .env("OUTLINE_API_TOKEN", &self.outline_token)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped()),
+        )
+        .spawn()
+        .with_context(|| format!("falha ao iniciar o Claude Code ({})", self.claude.display()))?;
+
+        let (tx, rx) = channel::<String>();
+        let stdout = child
+            .stdout
+            .take()
+            .context("stdout do Claude indisponível")?;
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout)
+                .lines()
+                .map_while(std::io::Result::ok)
+            {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        let mut stderr = child
+            .stderr
+            .take()
+            .context("stderr do Claude indisponível")?;
+        let stderr_thread = std::thread::spawn(move || {
+            let mut s = String::new();
+            let _ = stderr.read_to_string(&mut s);
+            s
+        });
+
+        let deadline = Instant::now() + self.timeout;
+        let (mut done, mut last) = (None, String::new());
+        loop {
+            match rx.recv_timeout(Duration::from_millis(200)) {
+                Ok(line) => {
+                    let _ = writeln!(log, "{line}"); // log é auxiliar: falha ao gravar não derruba a geração
+                    for ev in parse_line(&line) {
+                        match ev {
+                            StreamEvent::Progress(p) if p != last => {
+                                progress(&p);
+                                last = p;
+                            }
+                            StreamEvent::Progress(_) => {}
+                            d @ StreamEvent::Done { .. } => done = Some(d),
+                        }
+                    }
+                }
+                Err(RecvTimeoutError::Disconnected) => break,
+                Err(RecvTimeoutError::Timeout) => {}
+            }
+            if self.cancel.load(Ordering::Relaxed) {
+                kill_tree(&mut child);
+                bail!("geração cancelada");
+            }
+            if Instant::now() >= deadline {
+                kill_tree(&mut child);
+                bail!(
+                    "o Claude Code passou do tempo limite ({} s); geração interrompida",
+                    self.timeout.as_secs()
+                );
+            }
+        }
+        let status = child.wait().context("falha ao aguardar o Claude Code")?;
+        let stderr = stderr_thread.join().unwrap_or_default();
+
+        let (is_error, text) = match done {
+            Some(StreamEvent::Done { is_error, text }) => (is_error, Some(text)),
+            _ => (false, None),
+        };
+        if is_login_error(text.as_deref().unwrap_or("")) || is_login_error(&stderr) {
+            return Err(LoginRequired.into());
+        }
+        let Some(text) = text else {
+            bail!(
+                "o Claude Code saiu ({status}) sem resultado: {}",
+                tail(&stderr)
+            );
+        };
+        if is_error {
+            bail!("o Claude Code terminou com erro: {text}");
+        }
+        let bytes = match std::fs::read(&result_path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                bail!("a skill terminou sem gravar result.json: {text}");
+            }
+            Err(e) => return Err(e).context("falha ao ler o result.json"),
+        };
+        serde_json::from_slice(&bytes).context("result.json inválido")
+    }
+}
+
+/// Mata o claude e os filhos (shell, screenmanual-cli); `Child::kill` sozinho deixaria netos vivos.
+fn kill_tree(child: &mut Child) {
+    #[cfg(windows)]
+    let _ = no_window(
+        Command::new("taskkill")
+            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null()),
+    )
+    .status();
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Últimos ~500 caracteres (sem cortar um caractere UTF-8 ao meio).
+fn tail(s: &str) -> String {
+    let chars: Vec<char> = s.trim().chars().collect();
+    chars[chars.len().saturating_sub(500)..].iter().collect()
 }
 
 /// `CREATE_NO_WINDOW`: o app é GUI; sem isso cada `claude`/`taskkill` abriria um console.
