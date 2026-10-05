@@ -182,6 +182,19 @@ fn describe_command(cmd: &str) -> String {
     format!("comando: {short}")
 }
 
+const OMITTED_IMAGE: &str = r#"{"type":"user","omitido":"imagem"}"#;
+
+/// Linha do `stream-json` como vai para `logs/`: mensagem `user` com imagem vira um resumo,
+/// porque o base64 dos prints levava o log a ~10 MB por geração (validação de 2026-10-04).
+pub fn log_line(line: &str) -> &str {
+    if line.contains("\"image\"")
+        && serde_json::from_str::<Value>(line).is_ok_and(|v| v["type"] == "user")
+    {
+        return OMITTED_IMAGE;
+    }
+    line
+}
+
 fn is_login_error(text: &str) -> bool {
     let t = text.to_lowercase();
     [
@@ -332,7 +345,7 @@ impl ManualAgent for ClaudeAgent {
         loop {
             match rx.recv_timeout(Duration::from_millis(200)) {
                 Ok(line) => {
-                    let _ = writeln!(log, "{line}"); // log é auxiliar: falha ao gravar não derruba a geração
+                    let _ = writeln!(log, "{}", log_line(&line)); // log é auxiliar: falha ao gravar não derruba a geração
                     for ev in parse_line(&line) {
                         match ev {
                             StreamEvent::Progress(p) if p != last => {
@@ -641,5 +654,17 @@ mod tests {
         std::fs::write(&path, "versão antiga").unwrap();
         assert!(install_skill(&home).unwrap());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), SKILL);
+    }
+
+    #[test]
+    fn log_drops_base64_images_from_user_lines() {
+        let img = r#"{"type":"user","message":{"content":[{"type":"tool_result","content":[{"type":"image","source":{"type":"base64","data":"iVBORw0KGgo"}}]}]}}"#;
+        assert_eq!(log_line(img), r#"{"type":"user","omitido":"imagem"}"#);
+        let txt =
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}"#;
+        assert_eq!(log_line(txt), txt);
+        let asst = r#"{"type":"assistant","message":{"content":[{"type":"image","source":{}}]}}"#;
+        assert_eq!(log_line(asst), asst);
+        assert_eq!(log_line("não é json \"image\""), "não é json \"image\"");
     }
 }
