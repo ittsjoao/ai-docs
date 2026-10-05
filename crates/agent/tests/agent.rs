@@ -78,6 +78,16 @@ fn gerar_runs_claude_in_the_session_and_reads_result_json() {
         fake["path"]
     );
 
+    let cwd = fake["cwd"].as_str().unwrap();
+    assert!(!cwd.starts_with(r"\\?\"), "{cwd}");
+    let long = std::fs::canonicalize(&dir).unwrap();
+    let long = long.to_string_lossy();
+    let long = long.strip_prefix(r"\\?\").unwrap_or(&long);
+    if !long.contains('~') {
+        assert!(!cwd.contains('~'), "{cwd}");
+    }
+    assert_eq!(cwd, long);
+
     let logs: Vec<_> = std::fs::read_dir(dir.join("logs"))
         .unwrap()
         .map(|e| e.unwrap().path())

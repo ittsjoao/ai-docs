@@ -20,6 +20,7 @@ fn main() {
         "outline_url": env("OUTLINE_URL"),
         "token": env("OUTLINE_API_TOKEN"),
         "path": env("PATH"),
+        "cwd": std::env::current_dir().unwrap().to_string_lossy(),
     });
     std::fs::write("fake-args.json", seen.to_string()).unwrap();
     match std::fs::read_to_string("fake-mode.txt")

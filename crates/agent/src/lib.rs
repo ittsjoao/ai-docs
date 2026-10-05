@@ -235,6 +235,25 @@ impl ClaudeAgent {
     }
 }
 
+/// O `Read` do Claude Code recusa caminhos 8.3 como `JOAO~1.SIL` (validação de 2026-10-04).
+fn long_dir(dir: &Path) -> PathBuf {
+    std::fs::canonicalize(dir)
+        .map(|p| strip_verbatim(&p))
+        .unwrap_or_else(|_| dir.to_path_buf())
+}
+
+/// Tira o prefixo verbatim do Windows: `\\?\C:\x` vira `C:\x` e `\\?\UNC\s\x` vira `\\s\x`.
+fn strip_verbatim(p: &Path) -> PathBuf {
+    let s = p.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{rest}"))
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(rest)
+    } else {
+        p.to_path_buf()
+    }
+}
+
 impl ManualAgent for ClaudeAgent {
     fn run(
         &self,
@@ -242,6 +261,8 @@ impl ManualAgent for ClaudeAgent {
         mode: AgentMode,
         progress: &mut dyn FnMut(&str),
     ) -> PortResult<AgentResult> {
+        let dir = long_dir(dir);
+        let dir = dir.as_path();
         self.cancel.store(false, Ordering::Relaxed);
         let result_path = dir.join("result.json");
         match std::fs::remove_file(&result_path) {
@@ -575,6 +596,15 @@ mod tests {
         assert!(is_login_error("Not logged in · Please run /login"));
         assert!(is_login_error("Invalid API key · Fix external API key"));
         assert!(!is_login_error("Publicado como rascunho."));
+    }
+
+    #[test]
+    fn strip_verbatim_handles_drive_unc_and_plain_paths() {
+        let f = |s: &str| strip_verbatim(Path::new(s));
+        assert_eq!(f(r"\\?\C:\x\y"), PathBuf::from(r"C:\x\y"));
+        assert_eq!(f(r"\\?\UNC\srv\share\x"), PathBuf::from(r"\\srv\share\x"));
+        assert_eq!(f(r"C:\x"), PathBuf::from(r"C:\x"));
+        assert_eq!(f("rel/x"), PathBuf::from("rel/x"));
     }
 
     #[test]
