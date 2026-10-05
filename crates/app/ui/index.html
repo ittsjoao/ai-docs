@@ -1,5 +1,37 @@
 <!doctype html>
 <html lang="pt-BR">
-  <head><meta charset="utf-8" /><title>screenManual</title></head>
-  <body><h1>screenManual</h1></body>
+  <head>
+    <meta charset="utf-8" />
+    <title>screenManual</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <h1>screenManual</h1>
+      <div id="acoes-gravacao"></div>
+      <button data-acao="config" class="sec" title="Configurações">⚙</button>
+    </header>
+    <div id="faixa"></div>
+    <main>
+      <ul id="lista"></ul>
+      <section id="painel"></section>
+    </main>
+    <dialog id="titulo">
+      <form data-form="titulo">
+        <label>O que você vai documentar? <input name="titulo" required autofocus /></label>
+        <menu>
+          <button value="cancelar" formnovalidate class="sec">Cancelar</button>
+          <button value="ok">Gravar</button>
+        </menu>
+      </form>
+    </dialog>
+    <dialog id="pergunta">
+      <p></p>
+      <menu>
+        <button value="nao" class="sec">Não</button>
+        <button value="sim">Sim</button>
+      </menu>
+    </dialog>
+  </body>
 </html>

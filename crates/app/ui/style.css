@@ -1,0 +1,32 @@
+:root { font-family: "Segoe UI", system-ui, sans-serif; color: #1f2937; background: #f8fafc; }
+* { box-sizing: border-box; }
+body { margin: 0; height: 100vh; display: flex; flex-direction: column; }
+header { display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: #fff; border-bottom: 1px solid #e5e7eb; }
+header h1 { font-size: 16px; margin: 0; flex: 1; }
+button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid #b91c1c; background: #dc2626; color: #fff; cursor: pointer; }
+button.sec { background: #fff; color: #1f2937; border-color: #d1d5db; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+#faixa p { margin: 0; padding: 8px 16px; background: #fef3c7; border-bottom: 1px solid #fcd34d; }
+main { flex: 1; display: flex; min-height: 0; }
+#lista { width: 300px; margin: 0; padding: 0; list-style: none; overflow-y: auto; border-right: 1px solid #e5e7eb; background: #fff; }
+#lista li { padding: 10px 16px; border-bottom: 1px solid #f1f5f9; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+#lista li.sel { background: #fee2e2; }
+#lista li span { font-size: 12px; color: #6b7280; }
+#lista li .st-error { color: #b91c1c; }
+#lista li .st-draft, #lista li .st-published { color: #047857; }
+#painel { flex: 1; padding: 16px 24px; overflow-y: auto; }
+#painel h2 { margin: 0 0 4px; font-size: 20px; }
+.meta { color: #6b7280; margin-top: 0; }
+.vazio { color: #6b7280; padding: 16px; }
+.aviso { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 6px 10px; margin: 4px 0; }
+.dica { color: #6b7280; font-size: 13px; }
+.progresso { font-style: italic; color: #374151; }
+pre.erro { white-space: pre-wrap; background: #fef2f2; border-left: 3px solid #dc2626; padding: 8px 10px; }
+form { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; max-width: 560px; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+label.radio { flex-direction: row; align-items: center; gap: 6px; }
+input, select, textarea { font: inherit; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; }
+fieldset { border: 1px solid #e5e7eb; border-radius: 6px; display: flex; flex-direction: column; gap: 6px; }
+form > button { align-self: flex-start; }
+dialog { border: none; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.2); min-width: 360px; }
+dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 12px 0 0; }
