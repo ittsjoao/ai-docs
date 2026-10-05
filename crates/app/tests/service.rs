@@ -1,8 +1,10 @@
 mod fakes;
 
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use fakes::*;
 use screenmanual_app::*;
@@ -54,7 +56,6 @@ fn status(app: &App<FakeDeps>, id: &str) -> SessionStatus {
 }
 
 /// Grava e para: a sessão sai processada (`pronta`).
-#[allow(dead_code)]
 fn pronta(app: &App<FakeDeps>, titulo: &str) -> String {
     app.gravar(titulo, QUANDO).unwrap();
     app.parar().unwrap()
@@ -217,4 +218,152 @@ fn processar_sessao_gravando_e_ocupado() {
     assert_eq!(app.processar(&id, false).unwrap_err().kind, "ocupado");
     assert_eq!(app.parar().unwrap(), id);
     assert_eq!(status(&app, &id), SessionStatus::Ready);
+}
+
+#[test]
+fn gera_com_instrucao_e_mostra_os_avisos() {
+    let (app, rx) = app("gerar");
+    let id = pronta(&app, "Emitir NFS-e");
+    let dir = app.deps().store.dir(&id);
+    let r = app
+        .gerar(&id, "col", "  use o termo NFS-e ", false)
+        .unwrap();
+    assert_eq!(r.url, "http://wiki/doc/manual");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("instrucoes.txt")).unwrap(),
+        "use o termo NFS-e"
+    );
+    let d = app.detalhe(&id).unwrap();
+    assert_eq!(d.resumo.status, SessionStatus::Draft);
+    assert_eq!(d.colecao.as_deref(), Some("col"));
+    assert_eq!(d.validacao[0].tipo, "aviso");
+    let ev = eventos(&rx);
+    assert!(ev
+        .iter()
+        .any(|e| matches!(e, Evento::Progresso { texto, .. } if texto == "lendo")));
+    assert!(ev.iter().any(|e| matches!(
+        e,
+        Evento::Fim {
+            url: Some(_),
+            erro: None,
+            ..
+        }
+    )));
+
+    app.gerar(&id, "col", "", false).unwrap();
+    assert!(
+        !dir.join("instrucoes.txt").exists(),
+        "instrução vazia apaga o arquivo"
+    );
+}
+
+#[test]
+fn uma_geracao_por_vez_e_cancelar() {
+    let (app, rx) = app("cancelar");
+    let a = pronta(&app, "Primeira");
+    let b = pronta(&app, "Segunda");
+    eventos(&rx);
+    *app.deps().plano.lock().unwrap() = Plano::EsperaCancelar;
+    let (app2, a2) = (app.clone(), a.clone());
+    let t = std::thread::spawn(move || app2.gerar(&a2, "col", "", false));
+    loop {
+        if let Evento::Progresso { texto, .. } = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("o agente não começou")
+        {
+            if texto == "lendo" {
+                break;
+            }
+        }
+    }
+    assert_eq!(status(&app, &a), SessionStatus::Generating);
+    assert_eq!(app.inicio().unwrap().gerando.as_deref(), Some(a.as_str()));
+    assert!(app.ocupado());
+    let e = app.gerar(&b, "col", "", false).unwrap_err();
+    assert_eq!(e.kind, "ocupado");
+    assert!(e.mensagem.contains("Primeira"), "{}", e.mensagem);
+    assert_eq!(
+        app.melhorar(&b, "x", "", false).unwrap_err().kind,
+        "ocupado"
+    );
+    assert_eq!(app.processar(&a, false).unwrap_err().kind, "ocupado");
+
+    app.cancelar();
+    let e = t.join().unwrap().unwrap_err();
+    assert!(e.mensagem.contains("cancelada"), "{}", e.mensagem);
+    assert_eq!(status(&app, &a), SessionStatus::Error);
+    assert_eq!(app.inicio().unwrap().gerando, None);
+    assert!(!app.ocupado());
+}
+
+#[test]
+fn melhoria_sobre_edicao_manual_pede_confirmacao() {
+    let (app, _rx) = app("d9");
+    let id = pronta(&app, "Manual");
+    app.gerar(&id, "col", "", false).unwrap();
+    app.deps().remota.store(2, Ordering::SeqCst);
+    let e = app.melhorar(&id, "troque o título", "", false).unwrap_err();
+    assert_eq!(
+        (e.kind, e.local, e.remote),
+        ("editado_manualmente", Some(1), Some(2))
+    );
+    let feedback = app.deps().store.dir(&id).join("feedback.jsonl");
+    assert!(!feedback.exists());
+    app.melhorar(&id, "troque o título", "", true).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&feedback).unwrap().lines().count(),
+        1
+    );
+}
+
+#[test]
+fn gerar_sobrescrevendo_aceita_a_revisao_remota() {
+    let (app, _rx) = app("sobrescrever");
+    let id = pronta(&app, "Manual");
+    app.gerar(&id, "col", "", false).unwrap();
+    app.deps().remota.store(3, Ordering::SeqCst);
+    *app.deps().plano.lock().unwrap() = Plano::Editado;
+    let r = app.gerar(&id, "col", "", false).unwrap();
+    assert_eq!(r.validacao[0].tipo, "editado_manualmente");
+    assert_eq!(*app.deps().revisao_vista.lock().unwrap(), Some(1));
+    *app.deps().plano.lock().unwrap() = Plano::Ok;
+    app.gerar(&id, "col", "", true).unwrap();
+    assert_eq!(*app.deps().revisao_vista.lock().unwrap(), Some(3));
+}
+
+#[test]
+fn login_colecao_e_credenciais() {
+    let (app, _rx) = app("login");
+    let id = pronta(&app, "Manual");
+    *app.deps().plano.lock().unwrap() = Plano::Login;
+    assert_eq!(app.gerar(&id, "col", "", false).unwrap_err().kind, "login");
+    assert_eq!(
+        app.gerar(&id, " ", "", false).unwrap_err().kind,
+        "estado_invalido"
+    );
+    *app.deps().token.lock().unwrap() = None;
+    assert_eq!(
+        app.gerar(&id, "col", "", false).unwrap_err().kind,
+        "estado_invalido"
+    );
+}
+
+#[test]
+fn aprovar_publica_o_rascunho() {
+    let (app, _rx) = app("aprovar");
+    let id = pronta(&app, "Manual");
+    assert_eq!(app.aprovar(&id).unwrap_err().kind, "estado_invalido");
+    app.gerar(&id, "col", "", false).unwrap();
+    app.aprovar(&id).unwrap();
+    assert_eq!(status(&app, &id), SessionStatus::Published);
+}
+
+#[test]
+fn encerrar_para_a_gravacao_sem_processar() {
+    let (app, _rx) = app("encerrar");
+    let id = app.gravar("Manual", QUANDO).unwrap();
+    app.encerrar().unwrap();
+    assert!(!app.ocupado());
+    assert_eq!(status(&app, &id), SessionStatus::Stopped);
+    app.encerrar().unwrap(); // sem gravação: nada a fazer
 }

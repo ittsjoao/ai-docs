@@ -1,11 +1,15 @@
 //! Orquestração do app (spec 2026-10-05 §3): estado em memória, locks e eventos, sem Tauri.
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use screenmanual_agent::LoginRequired;
-use screenmanual_core::commands::{process_session, start_recording, stop_recording, CommandError};
+use screenmanual_core::commands::{
+    approve, generate_manual, improve_manual, process_session, start_recording, stop_recording,
+    CommandError,
+};
 use screenmanual_core::domain::{Activity, TranscribeConfig, TranscriptionModel};
 use screenmanual_core::ports::{
     AgentResult, Collection, Imaging, ManualAgent, Recorder, RecordingHandle, SessionStore,
@@ -491,7 +495,6 @@ impl<D: Deps> App<D> {
         Ok(g.id)
     }
 
-    #[allow(dead_code)] // usado pelo encerrar (Task 3): para sem processar
     fn parar_sem_processar(&self) -> Result<String, ApiError> {
         self.parar_gravacao(None)
     }
@@ -562,5 +565,163 @@ impl<D: Deps> App<D> {
             &cfg.build,
             refazer,
         )?)
+    }
+
+    fn ocupar_geracao(&self, id: &str) -> Result<Arc<AtomicBool>, ApiError> {
+        let mut st = self.st();
+        if let Some((outra, _)) = &st.geracao {
+            return Err(ApiError::new(
+                "ocupado",
+                format!("aguarde a geração de \"{}\"", self.titulo(outra)),
+            ));
+        }
+        if let Some(atual) = st.atividade.get(id) {
+            return Err(ApiError::new(
+                "ocupado",
+                format!("a sessão já está {}", nome(*atual)),
+            ));
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        st.atividade.insert(id.to_string(), Activity::Generating);
+        st.geracao = Some((id.to_string(), cancel.clone()));
+        drop(st);
+        (self.emit)(Evento::Sessao { id: id.into() });
+        Ok(cancel)
+    }
+
+    /// `instrucoes.txt` (spec §3): grava o texto, ou apaga o arquivo se vazio.
+    fn gravar_instrucao(&self, id: &str, instrucao: &str) -> Result<(), ApiError> {
+        let path = self.deps.store().dir(id).join("instrucoes.txt");
+        let r = match instrucao.trim() {
+            "" => match std::fs::remove_file(&path) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                r => r,
+            },
+            t => std::fs::write(&path, t),
+        };
+        r.map_err(|e| ApiError::new("outro", format!("falha ao gravar {}: {e}", path.display())))
+    }
+
+    /// "Sobrescrever" no diálogo do D9: a revisão remota passa a ser a última conhecida.
+    fn aceitar_revisao_remota(
+        &self,
+        cfg: &AppConfig,
+        token: &str,
+        id: &str,
+    ) -> Result<(), ApiError> {
+        let store = self.deps.store();
+        let Some(mut estado) = store.publish_state(id)? else {
+            return Ok(());
+        };
+        let Some(oid) = estado.outline_id.clone() else {
+            return Ok(());
+        };
+        estado.revision = Some(
+            self.deps
+                .wiki(&cfg.outline_url, token)?
+                .info(&oid)?
+                .revision,
+        );
+        store.save_publish_state(id, &estado)?;
+        Ok(())
+    }
+
+    pub fn gerar(
+        &self,
+        id: &str,
+        colecao: &str,
+        instrucao: &str,
+        sobrescrever: bool,
+    ) -> Result<AgentResult, ApiError> {
+        let (cfg, token) = self.credenciais()?;
+        if colecao.trim().is_empty() {
+            return Err(ApiError::new(
+                "estado_invalido",
+                "escolha a coleção do Outline",
+            ));
+        }
+        let cancel = self.ocupar_geracao(id)?;
+        let r = (|| -> Result<AgentResult, ApiError> {
+            self.gravar_instrucao(id, instrucao)?;
+            if sobrescrever {
+                self.aceitar_revisao_remota(&cfg, &token, id)?;
+            }
+            let agent = self.deps.agent(&cfg, &token, cancel)?;
+            Ok(generate_manual(
+                self.deps.store(),
+                &agent,
+                id,
+                colecao.trim(),
+                &mut |p| self.progresso(id, p),
+            )?)
+        })();
+        self.liberar(id, r.as_ref().err(), r.as_ref().ok().map(|x| x.url.clone()));
+        r
+    }
+
+    // ponytail: "sobrescrever" depois de um exit 3 da skill repete a linha em feedback.jsonl;
+    // a skill só aplica a última, então a duplicata não muda o resultado
+    pub fn melhorar(
+        &self,
+        id: &str,
+        texto: &str,
+        instrucao: &str,
+        sobrescrever: bool,
+    ) -> Result<AgentResult, ApiError> {
+        let (cfg, token) = self.credenciais()?;
+        let cancel = self.ocupar_geracao(id)?;
+        let r = (|| -> Result<AgentResult, ApiError> {
+            self.gravar_instrucao(id, instrucao)?;
+            let wiki = self.deps.wiki(&cfg.outline_url, &token)?;
+            let agent = self.deps.agent(&cfg, &token, cancel)?;
+            Ok(improve_manual(
+                self.deps.store(),
+                &wiki,
+                &agent,
+                id,
+                texto,
+                sobrescrever,
+                &mut |p| self.progresso(id, p),
+            )?)
+        })();
+        self.liberar(id, r.as_ref().err(), r.as_ref().ok().map(|x| x.url.clone()));
+        r
+    }
+
+    pub fn aprovar(&self, id: &str) -> Result<(), ApiError> {
+        let (cfg, token) = self.credenciais()?;
+        if let Some(atual) = self.st().atividade.get(id) {
+            return Err(ApiError::new(
+                "ocupado",
+                format!("a sessão está {}", nome(*atual)),
+            ));
+        }
+        let wiki = self.deps.wiki(&cfg.outline_url, &token)?;
+        let r = approve(self.deps.store(), &wiki, id);
+        (self.emit)(Evento::Sessao { id: id.into() });
+        r?;
+        Ok(())
+    }
+
+    pub fn cancelar(&self) {
+        if let Some((_, cancel)) = &self.st().geracao {
+            cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Para tudo antes de sair: cancela a geração (o agente mata a árvore do claude em até ~200 ms)
+    /// e encerra a gravação sem processar.
+    pub fn encerrar(&self) -> Result<(), ApiError> {
+        self.cancelar();
+        for _ in 0..50 {
+            if self.st().geracao.is_none() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        if self.st().gravacao.is_some() {
+            self.parar_sem_processar()?;
+        }
+        Ok(())
     }
 }
