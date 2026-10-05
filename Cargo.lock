@@ -2628,6 +2628,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "screenmanual-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "screenmanual-agent",
+ "screenmanual-core",
+ "screenmanual-settings",
+ "screenmanual-store",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "screenmanual-capture"
 version = "0.1.0"
 dependencies = [
