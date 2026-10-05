@@ -87,7 +87,8 @@ pub fn claude_args(mode: AgentMode, model: &str) -> Vec<String> {
         "stream-json",
         "--verbose",
         "--max-turns",
-        "40",
+        "100",
+        "--strict-mcp-config",
     ]
     .map(String::from)
     .to_vec();
@@ -105,7 +106,11 @@ pub enum StreamEvent {
     /// O que o Claude está fazendo, em português, para a barra de progresso.
     Progress(String),
     /// Última linha do `stream-json` (`type: result`).
-    Done { is_error: bool, text: String },
+    Done {
+        is_error: bool,
+        subtype: String,
+        text: String,
+    },
 }
 
 /// Uma linha do `--output-format stream-json`; linhas desconhecidas são ignoradas.
@@ -123,6 +128,7 @@ pub fn parse_line(line: &str) -> Vec<StreamEvent> {
             .map(StreamEvent::Progress)
             .collect(),
         Some("result") => vec![StreamEvent::Done {
+            subtype: v["subtype"].as_str().unwrap_or("").to_string(),
             is_error: v["is_error"].as_bool().unwrap_or(false),
             text: v["result"].as_str().unwrap_or("").to_string(),
         }],
@@ -151,18 +157,29 @@ fn describe(tool: &str, input: &Value) -> Option<String> {
             let cmd = input["command"].as_str()?.trim();
             let mut words = cmd.split_whitespace();
             if words.next() != Some("screenmanual-cli") {
-                return Some(format!("comando: {cmd}"));
+                return Some(describe_command(cmd));
             }
             Some(match words.next() {
                 Some("render") => "montando o manual".to_string(),
                 Some("publish") => "publicando o rascunho no Outline".to_string(),
                 Some("fetch") => "conferindo o que foi publicado".to_string(),
                 Some("redact") => "tarjando um dado sensível".to_string(),
-                _ => format!("comando: {cmd}"),
+                _ => describe_command(cmd),
             })
         }
         _ => None,
     }
+}
+
+/// `comando: ...` com só a primeira linha, em até 80 caracteres (`…` quando cortou).
+fn describe_command(cmd: &str) -> String {
+    let mut lines = cmd.lines();
+    let first = lines.next().unwrap_or("");
+    let mut short: String = first.chars().take(80).collect();
+    if short.len() < first.len() || lines.next().is_some() {
+        short.push('…');
+    }
+    format!("comando: {short}")
 }
 
 fn is_login_error(text: &str) -> bool {
@@ -177,6 +194,10 @@ fn is_login_error(text: &str) -> bool {
     .iter()
     .any(|k| t.contains(k))
 }
+
+/// Tolerância depois que o Claude terminou (evento `result` ou processo encerrado): netos que
+/// herdaram o stdout/stderr podem segurar os pipes, então passado isso paramos de esperar o EOF.
+const GRACE: Duration = Duration::from_secs(2);
 
 /// Adapter da porta `ManualAgent` (spec §7.2).
 pub struct ClaudeAgent {
@@ -277,14 +298,16 @@ impl ManualAgent for ClaudeAgent {
             .stderr
             .take()
             .context("stderr do Claude indisponível")?;
-        let stderr_thread = std::thread::spawn(move || {
+        let (err_tx, err_rx) = channel::<String>();
+        std::thread::spawn(move || {
             let mut s = String::new();
             let _ = stderr.read_to_string(&mut s);
-            s
+            let _ = err_tx.send(s);
         });
 
         let deadline = Instant::now() + self.timeout;
         let (mut done, mut last) = (None, String::new());
+        let mut finished_at: Option<Instant> = None;
         loop {
             match rx.recv_timeout(Duration::from_millis(200)) {
                 Ok(line) => {
@@ -296,12 +319,21 @@ impl ManualAgent for ClaudeAgent {
                                 last = p;
                             }
                             StreamEvent::Progress(_) => {}
-                            d @ StreamEvent::Done { .. } => done = Some(d),
+                            d @ StreamEvent::Done { .. } => {
+                                done = Some(d);
+                                finished_at.get_or_insert_with(Instant::now);
+                            }
                         }
                     }
                 }
                 Err(RecvTimeoutError::Disconnected) => break,
                 Err(RecvTimeoutError::Timeout) => {}
+            }
+            if finished_at.is_none() && matches!(child.try_wait(), Ok(Some(_))) {
+                finished_at = Some(Instant::now());
+            }
+            if finished_at.is_some_and(|t| t.elapsed() >= GRACE) {
+                break;
             }
             if self.cancel.load(Ordering::Relaxed) {
                 kill_tree(&mut child);
@@ -315,14 +347,29 @@ impl ManualAgent for ClaudeAgent {
                 );
             }
         }
-        let status = child.wait().context("falha ao aguardar o Claude Code")?;
-        let stderr = stderr_thread.join().unwrap_or_default();
-
-        let (is_error, text) = match done {
-            Some(StreamEvent::Done { is_error, text }) => (is_error, Some(text)),
-            _ => (false, None),
+        // sobrou processo (neto segurando o pipe, claude lento para sair): mata a árvore, que também espera
+        if !matches!(child.try_wait(), Ok(Some(_))) {
+            kill_tree(&mut child);
+        }
+        let status = match child.try_wait() {
+            Ok(Some(s)) => s.to_string(),
+            _ => "sem status".to_string(),
         };
-        if is_login_error(text.as_deref().unwrap_or("")) || is_login_error(&stderr) {
+        let stderr = err_rx
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap_or_default();
+
+        let (is_error, subtype, text) = match done {
+            Some(StreamEvent::Done {
+                is_error,
+                subtype,
+                text,
+            }) => (is_error, subtype, Some(text)),
+            _ => (false, String::new(), None),
+        };
+        if (is_error || text.is_none())
+            && (is_login_error(text.as_deref().unwrap_or("")) || is_login_error(&stderr))
+        {
             return Err(LoginRequired.into());
         }
         let Some(text) = text else {
@@ -331,8 +378,8 @@ impl ManualAgent for ClaudeAgent {
                 tail(&stderr)
             );
         };
-        if is_error {
-            bail!("o Claude Code terminou com erro: {text}");
+        if is_error || text.trim().is_empty() {
+            bail!("o Claude Code parou ({subtype}): {text}");
         }
         let bytes = match std::fs::read(&result_path) {
             Ok(b) => b,
@@ -345,11 +392,17 @@ impl ManualAgent for ClaudeAgent {
     }
 }
 
+#[cfg(windows)]
+fn taskkill_path() -> PathBuf {
+    let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
+    PathBuf::from(root).join("System32").join("taskkill.exe")
+}
+
 /// Mata o claude e os filhos (shell, screenmanual-cli); `Child::kill` sozinho deixaria netos vivos.
 fn kill_tree(child: &mut Child) {
     #[cfg(windows)]
     let _ = no_window(
-        Command::new("taskkill")
+        Command::new(taskkill_path())
             .args(["/PID", &child.id().to_string(), "/T", "/F"])
             .stdout(Stdio::null())
             .stderr(Stdio::null()),
@@ -394,7 +447,7 @@ mod tests {
     fn args_follow_the_spec() {
         let a = claude_args(AgentMode::Gerar, "sonnet");
         assert_eq!(
-            &a[..9],
+            &a[..10],
             [
                 "-p",
                 "/gerar-manual gerar",
@@ -402,7 +455,8 @@ mod tests {
                 "stream-json",
                 "--verbose",
                 "--max-turns",
-                "40",
+                "100",
+                "--strict-mcp-config",
                 "--model",
                 "sonnet"
             ]
@@ -421,7 +475,7 @@ mod tests {
             &a[a.len() - 3..],
             ["--disallowedTools", "WebFetch", "WebSearch"]
         );
-        assert_eq!(a.len(), 9 + 1 + 12 + 3);
+        assert_eq!(a.len(), 10 + 1 + 12 + 3);
 
         let m = claude_args(AgentMode::Melhoria, "");
         assert_eq!(m[1], "/gerar-manual melhoria");
@@ -475,6 +529,20 @@ mod tests {
             parse_line(&tool("Bash", r#"{"command":"dir"}"#)),
             p("comando: dir")
         );
+        assert_eq!(
+            parse_line(&tool("Bash", r#"{"command":"echo a\necho b"}"#)),
+            p("comando: echo a…")
+        );
+        let long = "x".repeat(100);
+        assert_eq!(
+            parse_line(&tool("Bash", &format!(r#"{{"command":"{long}"}}"#))),
+            p(&format!("comando: {}…", "x".repeat(80)))
+        );
+        let acentos = "é".repeat(90);
+        assert_eq!(
+            parse_line(&tool("Bash", &format!(r#"{{"command":"{acentos}"}}"#))),
+            p(&format!("comando: {}…", "é".repeat(80)))
+        );
         assert!(parse_line(&tool("Glob", r#"{"pattern":"crops/*"}"#)).is_empty());
         assert!(parse_line(
             r#"{"type":"assistant","message":{"content":[{"type":"text","text":"oi"}]}}"#
@@ -488,7 +556,16 @@ mod tests {
             ),
             vec![StreamEvent::Done {
                 is_error: false,
+                subtype: "success".into(),
                 text: "Publicado.".into()
+            }]
+        );
+        assert_eq!(
+            parse_line(r#"{"type":"result","subtype":"error_max_turns","is_error":true}"#),
+            vec![StreamEvent::Done {
+                is_error: true,
+                subtype: "error_max_turns".into(),
+                text: String::new()
             }]
         );
     }

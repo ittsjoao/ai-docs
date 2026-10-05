@@ -4,7 +4,7 @@ pub use models::{ensure_model, model_info, save_verified, ModelInfo};
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use screenmanual_core::domain::{BuildConfig, CaptureConfig, TranscribeConfig};
 use serde::{Deserialize, Serialize};
 
@@ -108,6 +108,9 @@ pub fn load_token() -> Result<Option<String>> {
 }
 
 pub fn save_token(token: &str) -> Result<()> {
+    if token.trim().is_empty() {
+        bail!("token do Outline vazio");
+    }
     entry()?
         .set_password(token.trim())
         .context("falha ao gravar o token do Outline no Credential Manager")
@@ -176,6 +179,17 @@ mod tests {
         );
         assert_eq!(p.models_dir(), PathBuf::from(r"C:\L\screenManual\models"));
         assert_eq!(p.logs_dir(), PathBuf::from(r"C:\L\screenManual\logs"));
+    }
+
+    #[test]
+    fn empty_token_is_rejected_before_the_keyring() {
+        for t in [
+            "", "   	
+",
+        ] {
+            let err = save_token(t).unwrap_err().to_string();
+            assert!(err.contains("token do Outline vazio"), "{err}");
+        }
     }
 
     #[test]

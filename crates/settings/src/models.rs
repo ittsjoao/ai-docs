@@ -3,6 +3,7 @@
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use screenmanual_core::domain::TranscriptionModel;
@@ -94,8 +95,12 @@ pub fn ensure_model(
     std::fs::create_dir_all(models_dir)
         .with_context(|| format!("falha ao criar {}", models_dir.display()))?;
     let url = format!("{BASE_URL}/{}", info.file);
-    // o padrão do reqwest blocking é 30 s no total; um modelo de ~550 MB precisa de minutos
-    let http = reqwest::blocking::Client::builder().timeout(None).build()?;
+    // o padrão do reqwest blocking é 30 s no total; um modelo de ~550 MB ganha até 1 h, e sem
+    // resposta na conexão desiste em 30 s (cancelar o download fica para o plano 06)
+    let http = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(3600))
+        .build()?;
     let resp = http
         .get(&url)
         .send()

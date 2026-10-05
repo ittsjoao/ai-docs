@@ -145,6 +145,23 @@ fn cancel_kills_claude() {
 }
 
 #[test]
+fn orphan_holding_stdout_does_not_hang_a_finished_run() {
+    let started = Instant::now();
+    let result = run(&agent(), &session("orphan", "orphan"), AgentMode::Gerar)
+        .0
+        .unwrap();
+    assert_eq!(result.url, "https://wiki.x/doc/a");
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn success_text_mentioning_login_is_not_a_login_error() {
+    let dir = session("okmentionslogin", "okmentionslogin");
+    let result = run(&agent(), &dir, AgentMode::Gerar).0.unwrap();
+    assert_eq!(result.revision, 2);
+}
+
+#[test]
 fn check_claude_reports_the_version_or_a_missing_install() {
     assert_eq!(
         check_claude(Path::new(FAKE)).unwrap(),
