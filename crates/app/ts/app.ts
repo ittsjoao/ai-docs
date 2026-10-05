@@ -28,7 +28,7 @@ type Evento =
   | { evento: "modelo"; modelo: Modelo; baixado: number; total: number }
   | { evento: "modelo_fim"; modelo: Modelo; erro: string | null }
   | { evento: "gravacao"; estado: Gravacao; id: string }
-  | { evento: "fim"; id: string }
+  | { evento: "fim"; id: string; titulo: string; url: string | null; erro: string | null }
   | { evento: "pedir_titulo" }
   | { evento: "confirmar_sair" };
 
@@ -81,11 +81,21 @@ async function carregar(): Promise<void> {
   render();
 }
 
+/** Lista as coleções; se falhar (ex.: token revogado), mostra o erro e devolve []. */
+async function carregarColecoes(): Promise<Colecao[]> {
+  try {
+    return await invoke<Colecao[]>("colecoes");
+  } catch (e) {
+    st.aviso = (e as ApiError).mensagem ?? String(e);
+    return [];
+  }
+}
+
 async function abrirConfig(): Promise<void> {
   st.tela = "config";
   st.config = await invoke<Config>("config");
   if (st.inicio?.configurado && st.colecoes.length === 0) {
-    st.colecoes = await invoke<Colecao[]>("colecoes").catch(() => []);
+    st.colecoes = await carregarColecoes();
   }
 }
 
@@ -94,7 +104,7 @@ async function selecionar(id: string): Promise<void> {
   st.tela = "sessao";
   st.det = await invoke<Detalhe>("detalhe", { id });
   if (st.inicio?.configurado && st.colecoes.length === 0) {
-    st.colecoes = await invoke<Colecao[]>("colecoes").catch(() => []);
+    st.colecoes = await carregarColecoes();
   }
   render();
 }
@@ -335,7 +345,12 @@ document.addEventListener("click", async (ev) => {
     case "cancelar": return tentar(() => invoke("cancelar"));
     case "processar": return executar(id, () => invoke("processar", { id, refazer: false }));
     case "reprocessar": return executar(id, () => invoke("processar", { id, refazer: true }));
-    case "aprovar": return executar(id, () => invoke("aprovar", { id }));
+    case "aprovar": {
+      (b as HTMLButtonElement).disabled = true;
+      try { await executar(id, () => invoke("aprovar", { id })); }
+      finally { (b as HTMLButtonElement).disabled = false; }
+      return;
+    }
     case "repetir": return st.ultima[id]?.();
     case "link": return tentar(() => invoke("abrir_link", { url: b.dataset.url }));
     case "pasta": return tentar(() => invoke("abrir_pasta", { id }));
@@ -418,6 +433,7 @@ __TAURI__.event.listen<Evento>("app", async ({ payload: ev }) => {
     }
     case "fim":
       delete st.progresso[ev.id];
+      if (ev.erro) st.aviso = ev.erro;
       return carregar();
     case "sessao":
     case "gravacao":
@@ -445,7 +461,7 @@ carregar()
   .then(async () => {
     if (st.inicio?.configurado) {
       st.config = await invoke<Config>("config");
-      st.colecoes = await invoke<Colecao[]>("colecoes").catch(() => []);
+      st.colecoes = await carregarColecoes();
       render();
     }
   })

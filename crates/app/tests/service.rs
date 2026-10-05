@@ -367,3 +367,109 @@ fn encerrar_para_a_gravacao_sem_processar() {
     assert_eq!(status(&app, &id), SessionStatus::Stopped);
     app.encerrar().unwrap(); // sem gravação: nada a fazer
 }
+
+#[test]
+fn aprovar_reserva_a_sessao_e_nao_emite_fim() {
+    let (app, rx) = app("aprovar-reserva");
+    let id = pronta(&app, "Manual");
+    app.gerar(&id, "col", "", false).unwrap();
+    eventos(&rx);
+    app.aprovar(&id).unwrap();
+    let ev = eventos(&rx);
+    let sessoes = ev
+        .iter()
+        .filter(|e| matches!(e, Evento::Sessao { .. }))
+        .count();
+    assert_eq!(sessoes, 2, "reserva e liberação: {ev:?}");
+    assert!(
+        !ev.iter().any(|e| matches!(e, Evento::Fim { .. })),
+        "{ev:?}"
+    );
+    // Segundo aprovar (depois do primeiro) é erro de estado, mas a sessão não é reservada.
+    assert_eq!(app.aprovar(&id).unwrap_err().kind, "estado_invalido");
+}
+
+#[test]
+fn aprovar_sessao_ocupada_nao_toca_no_error_txt() {
+    let (app, _rx) = app("aprovar-ocupada");
+    let id = app.gravar("A", QUANDO).unwrap();
+    assert_eq!(app.aprovar(&id).unwrap_err().kind, "ocupado");
+    assert!(!app.deps().store.dir(&id).join("error.txt").exists());
+    app.parar().unwrap();
+    assert_eq!(status(&app, &id), SessionStatus::Ready);
+}
+
+#[test]
+fn id_invalido_e_recusado() {
+    let (app, _rx) = app("id-invalido");
+    let fora = format!("..{}x", char::from(92u8));
+    let e = app.gerar(&fora, "col", "texto", false).unwrap_err();
+    assert_eq!(
+        (e.kind, e.mensagem.as_str()),
+        ("estado_invalido", "sessão inválida")
+    );
+    assert!(!app.deps().store.dir(&fora).join("instrucoes.txt").exists());
+    assert_eq!(app.detalhe("C:").unwrap_err().kind, "estado_invalido");
+    assert_eq!(app.detalhe("a/b").unwrap_err().kind, "estado_invalido");
+    assert_eq!(app.detalhe("").unwrap_err().kind, "estado_invalido");
+    assert_eq!(
+        app.processar("..", false).unwrap_err().kind,
+        "estado_invalido"
+    );
+    assert_eq!(
+        app.melhorar("..", "x", "", false).unwrap_err().kind,
+        "estado_invalido"
+    );
+    assert_eq!(app.aprovar("..").unwrap_err().kind, "estado_invalido");
+}
+
+#[test]
+fn ocupado_vale_durante_o_processamento() {
+    let root = temp("ocupado-proc");
+    let config_file = root.join("config.json");
+    AppConfig {
+        outline_url: "http://wiki".into(),
+        ..AppConfig::default()
+    }
+    .save(&config_file)
+    .unwrap();
+    let (tx, rx) = channel();
+    let (go_tx, go_rx) = channel::<()>();
+    let (tx, go_rx) = (Mutex::new(tx), Mutex::new(go_rx));
+    let app = Arc::new(App::new(
+        FakeDeps::new(&root.join("sessions")),
+        config_file,
+        Box::new(move |e| {
+            let bloquear =
+                matches!(&e, Evento::Progresso { texto, .. } if texto.starts_with("baixando"));
+            let _ = tx.lock().unwrap().send(e);
+            if bloquear {
+                let _ = go_rx.lock().unwrap().recv_timeout(Duration::from_secs(5));
+            }
+        }),
+    ));
+    let id = app.gravar("Com fala", QUANDO).unwrap();
+    std::fs::write(app.deps().store.dir(&id).join("audio.wav"), [0u8; 100]).unwrap();
+    let app2 = app.clone();
+    let t = std::thread::spawn(move || app2.parar());
+    loop {
+        if let Evento::Progresso { .. } = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("o processamento não começou")
+        {
+            break;
+        }
+    }
+    assert!(app.ocupado(), "processando conta como ocupado");
+    go_tx.send(()).unwrap();
+    t.join().unwrap().unwrap();
+    assert!(!app.ocupado());
+}
+
+#[test]
+fn parar_sem_gravacao_nao_emite_nada() {
+    // Sem gravação não há id para o Fim; o erro só volta ao chamador.
+    let (app, rx) = app("parar-sem-gravacao");
+    assert_eq!(app.parar().unwrap_err().kind, "estado_invalido");
+    assert!(eventos(&rx).is_empty());
+}

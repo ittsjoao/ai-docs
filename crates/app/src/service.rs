@@ -116,6 +116,16 @@ impl ApiError {
     }
 }
 
+/// O id vira nome de pasta (`FsStore::dir`): exatamente um componente normal, sem `..`, barras
+/// nem prefixos como `C:`.
+pub fn validar_id(id: &str) -> Result<(), ApiError> {
+    let mut comps = std::path::Path::new(id).components();
+    match (comps.next(), comps.next()) {
+        (Some(std::path::Component::Normal(_)), None) => Ok(()),
+        _ => Err(ApiError::new("estado_invalido", "sessão inválida")),
+    }
+}
+
 fn is_login(e: &anyhow::Error) -> bool {
     e.downcast_ref::<LoginRequired>().is_some()
 }
@@ -268,7 +278,9 @@ impl<D: Deps> App<D> {
 
     pub fn ocupado(&self) -> bool {
         let st = self.st();
-        st.gravacao.is_some() || st.geracao.is_some()
+        st.gravacao.is_some()
+            || st.geracao.is_some()
+            || st.atividade.values().any(|a| *a == Activity::Processing)
     }
 
     pub fn inicio(&self) -> Result<Inicio, ApiError> {
@@ -305,6 +317,7 @@ impl<D: Deps> App<D> {
     }
 
     pub fn detalhe(&self, id: &str) -> Result<Detalhe, ApiError> {
+        validar_id(id)?;
         let store = self.deps.store();
         let atividade = self.st().atividade.get(id).copied();
         let resumo = get_session(store, id, atividade)?;
@@ -491,6 +504,15 @@ impl<D: Deps> App<D> {
             self.st().atividade.remove(&g.id);
         }
         (self.emit)(Evento::Sessao { id: g.id.clone() });
+        if let Err(e) = &r {
+            // A UI só fica sabendo da falha por aqui (a bandeja descarta o resultado).
+            (self.emit)(Evento::Fim {
+                id: g.id.clone(),
+                titulo: self.titulo(&g.id),
+                url: None,
+                erro: Some(e.to_string()),
+            });
+        }
         r?;
         Ok(g.id)
     }
@@ -532,6 +554,7 @@ impl<D: Deps> App<D> {
 
     /// Transcreve (baixando o modelo se preciso), monta candidatos e crops.
     pub fn processar(&self, id: &str, refazer: bool) -> Result<usize, ApiError> {
+        validar_id(id)?;
         self.ocupar(id, Activity::Processing)?;
         let r = self.processar_dentro(id, refazer);
         self.liberar(id, r.as_ref().err(), None);
@@ -633,6 +656,7 @@ impl<D: Deps> App<D> {
         instrucao: &str,
         sobrescrever: bool,
     ) -> Result<AgentResult, ApiError> {
+        validar_id(id)?;
         let (cfg, token) = self.credenciais()?;
         if colecao.trim().is_empty() {
             return Err(ApiError::new(
@@ -668,6 +692,7 @@ impl<D: Deps> App<D> {
         instrucao: &str,
         sobrescrever: bool,
     ) -> Result<AgentResult, ApiError> {
+        validar_id(id)?;
         let (cfg, token) = self.credenciais()?;
         let cancel = self.ocupar_geracao(id)?;
         let r = (|| -> Result<AgentResult, ApiError> {
@@ -689,18 +714,18 @@ impl<D: Deps> App<D> {
     }
 
     pub fn aprovar(&self, id: &str) -> Result<(), ApiError> {
+        validar_id(id)?;
         let (cfg, token) = self.credenciais()?;
-        if let Some(atual) = self.st().atividade.get(id) {
-            return Err(ApiError::new(
-                "ocupado",
-                format!("a sessão está {}", nome(*atual)),
-            ));
-        }
-        let wiki = self.deps.wiki(&cfg.outline_url, &token)?;
-        let r = approve(self.deps.store(), &wiki, id);
+        // Reserva a sessão: um segundo clique concorrente recebe `ocupado` sem tocar no disco.
+        self.ocupar(id, Activity::Processing)?;
+        let r = (|| -> Result<(), ApiError> {
+            let wiki = self.deps.wiki(&cfg.outline_url, &token)?;
+            approve(self.deps.store(), &wiki, id)?;
+            Ok(())
+        })();
+        self.st().atividade.remove(id);
         (self.emit)(Evento::Sessao { id: id.into() });
-        r?;
-        Ok(())
+        r
     }
 
     pub fn cancelar(&self) {
