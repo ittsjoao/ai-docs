@@ -106,6 +106,14 @@ fn ao_evento(app: &AppHandle, ev: Evento) {
                 .body(corpo)
                 .show();
         }
+        Evento::Perguntas { titulo, .. } => {
+            let _ = app
+                .notification()
+                .builder()
+                .title(format!("A IA tem dúvidas: {titulo}"))
+                .body("abra o screenManual para responder")
+                .show();
+        }
         _ => {}
     }
     let _ = app.emit("app", &ev);
@@ -234,6 +242,10 @@ fn main() {
             commands::adicionar_imagem,
             commands::republicar,
             commands::cancelar,
+            commands::perguntas,
+            commands::responder,
+            commands::pular,
+            commands::cancelar_perguntas,
             commands::abrir_link,
             commands::abrir_pasta,
             commands::fazer_login,

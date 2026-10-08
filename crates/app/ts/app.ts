@@ -24,6 +24,8 @@ interface Colecao { id: string; name: string; }
 interface DocNode { id: string; title: string; children: DocNode[]; }
 interface Config { outline_url: string; colecao_padrao: string | null; documento_padrao: string | null; transcricao: { modelo: Modelo; vocabulario: boolean }; [k: string]: unknown; }
 interface ApiError { kind: string; mensagem: string; local?: number; remote?: number; }
+interface Pergunta { id: string; pergunta: string; opcoes: string[]; multipla: boolean; }
+interface Perguntas { perguntas: Pergunta[]; }
 interface AgentResult { tipo: "pronto" | "perguntas"; url?: string; validacao?: Validacao[]; }
 type Evento =
   | { evento: "sessao"; id: string }
@@ -32,6 +34,7 @@ type Evento =
   | { evento: "modelo_fim"; modelo: Modelo; erro: string | null }
   | { evento: "gravacao"; estado: Gravacao; id: string }
   | { evento: "fim"; id: string; titulo: string; url: string | null; erro: string | null }
+  | { evento: "perguntas"; id: string; titulo: string }
   | { evento: "pedir_titulo" }
   | { evento: "confirmar_sair" };
 
@@ -111,6 +114,28 @@ async function abrirConfig(): Promise<void> {
   }
 }
 
+async function abrirDuvidas(id: string): Promise<void> {
+  const p = await invoke<Perguntas | null>("perguntas", { id });
+  if (!p) return;
+  $("#lista-duvidas").innerHTML = p.perguntas.map((q) => `<fieldset data-q="${esc(q.id)}"><legend>${esc(q.pergunta)}</legend>
+    ${q.opcoes.map((o) => `<label class="radio"><input type="${q.multipla ? "checkbox" : "radio"}" name="${esc(q.id)}" value="${esc(o)}"> ${esc(o)}</label>`).join("")}
+    <label>Outro <input name="${esc(q.id)}__outro" placeholder="escreva outra resposta"></label></fieldset>`).join("");
+  const dlg = $<HTMLDialogElement>("#duvidas");
+  dlg.dataset.id = id;
+  if (!dlg.open) dlg.showModal();
+}
+
+function lerRespostas(f: HTMLFormElement): { respostas: { id: string; escolhas: string[]; outro: string | null }[] } {
+  const v = new FormData(f);
+  return {
+    respostas: [...f.querySelectorAll<HTMLElement>("fieldset[data-q]")].map((fs) => {
+      const q = fs.dataset.q!;
+      const outro = String(v.get(`${q}__outro`) ?? "").trim();
+      return { id: q, escolhas: v.getAll(q).map(String), outro: outro || null };
+    }),
+  };
+}
+
 async function selecionar(id: string): Promise<void> {
   st.sel = id;
   st.colGerar = null;
@@ -122,6 +147,7 @@ async function selecionar(id: string): Promise<void> {
     st.colecoes = await carregarColecoes();
   }
   render();
+  if (st.det?.status === "awaiting") abrirDuvidas(id);
 }
 
 function baixar(m: Modelo): void {
@@ -281,7 +307,7 @@ function htmlAcoes(d: Detalhe): string {
   switch (d.status) {
     case "recording": return `<p>Gravando… use ⏸ / ■ no topo ou na bandeja. Ctrl+Alt+P pausa/retoma; Ctrl+Alt+M marca um passo.</p>`;
     case "processing": return prog;
-    case "awaiting": return "";
+    case "awaiting": return `<p>A IA tem dúvidas antes de escrever o manual.</p><button data-acao="responder">Responder…</button>`;
     case "generating": return prog + `<button data-acao="cancelar" class="sec">Cancelar</button>`;
     case "interrupted":
     case "stopped": return `<p>Gravação ainda não processada.</p><button data-acao="processar">Processar</button>`;
@@ -503,6 +529,17 @@ document.addEventListener("click", async (ev) => {
     }
     case "img-passo": return abrirImagens(Number(b.dataset.n));
     case "republicar": return republicar(id);
+    case "responder": return abrirDuvidas(id);
+    case "pular": {
+      const sid = $<HTMLDialogElement>("#duvidas").dataset.id!;
+      $<HTMLDialogElement>("#duvidas").close();
+      return executar(sid, () => invoke("pular", { id: sid }));
+    }
+    case "cancelar-perguntas": {
+      const sid = $<HTMLDialogElement>("#duvidas").dataset.id!;
+      $<HTMLDialogElement>("#duvidas").close();
+      return tentar(() => invoke("cancelar_perguntas", { id: sid }));
+    }
     case "repetir": return st.ultima[id]?.();
     case "link": return tentar(() => invoke("abrir_link", { url: b.dataset.url }));
     case "pasta": return tentar(() => invoke("abrir_pasta", { id }));
@@ -545,6 +582,17 @@ document.addEventListener("submit", async (ev) => {
         st.tela = "sessao";
         await __TAURI__.window.getCurrentWindow().hide();
       });
+    }
+    case "duvidas": {
+      const dlg = $<HTMLDialogElement>("#duvidas");
+      const sid = dlg.dataset.id!;
+      const respostas = lerRespostas(f);
+      if (respostas.respostas.some((r) => r.escolhas.length === 0 && !r.outro)) {
+        st.aviso = "Responda todas as perguntas ou clique em Pular.";
+        return render();
+      }
+      dlg.close();
+      return executar(sid, () => invoke("responder", { id: sid, respostas }));
     }
     case "gerar": {
       const colecao = s("colecao");
@@ -596,6 +644,9 @@ __TAURI__.event.listen<Evento>("app", async ({ payload: ev }) => {
       delete st.progresso[ev.id];
       if (ev.erro) st.aviso = ev.erro;
       return carregar();
+    case "perguntas":
+      await carregar();
+      return abrirDuvidas(ev.id);
     case "sessao":
     case "gravacao":
       return carregar();

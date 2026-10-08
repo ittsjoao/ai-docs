@@ -21,6 +21,7 @@ pub enum Plano {
     Login,
     EsperaCancelar,
     Editado,
+    Perguntas,
 }
 
 pub struct FakeDeps {
@@ -252,6 +253,11 @@ impl ManualAgent for FakeAgent {
         let publish = dir.join("publish.json");
         let mut p: serde_json::Value = serde_json::from_slice(&std::fs::read(&publish)?)?;
         *self.revisao_vista.lock().unwrap() = p["revision"].as_u64();
+        if self.plano == Plano::Perguntas && !dir.join("respostas.json").exists() {
+            let p = r#"{"perguntas":[{"id":"q1","pergunta":"Qual sistema?","opcoes":["ERP","CRM"]}],"session_id":"sess-1","modo":"gerar"}"#;
+            std::fs::write(dir.join("perguntas.json"), p)?;
+            return Ok(AgentOutcome::Perguntas(serde_json::from_str(p)?));
+        }
         let validacao = match self.plano {
             Plano::Login => return Err(LoginRequired.into()),
             Plano::EsperaCancelar => loop {
@@ -260,19 +266,19 @@ impl ManualAgent for FakeAgent {
                 }
                 std::thread::sleep(Duration::from_millis(10));
             },
-            Plano::Ok => serde_json::json!([{"tipo": "aviso", "detalhe": "passo 3 sem imagem"}]),
+            Plano::Ok | Plano::Perguntas => serde_json::json!([{"tipo": "aviso", "detalhe": "passo 3 sem imagem"}]),
             Plano::Editado => {
                 serde_json::json!([{"tipo": "editado_manualmente", "detalhe": "exit 3"}])
             }
         };
-        if self.plano == Plano::Ok {
+        if matches!(self.plano, Plano::Ok | Plano::Perguntas) {
             std::fs::write(
                 dir.join("steps.json"),
                 r#"{"schema_version":1,"titulo":"Manual","secoes":[{"titulo":"S","passos":[{"candidatos":[],"imagem":null,"texto":"Clique em **OK**.","aviso":null,"dica":null}]}]}"#,
             )?;
         }
         let revision = self.remota.load(SeqCst);
-        if self.plano == Plano::Ok {
+        if matches!(self.plano, Plano::Ok | Plano::Perguntas) {
             p["outline_id"] = "doc".into();
             p["url"] = "http://wiki/doc/manual".into();
             p["revision"] = revision.into();
@@ -287,6 +293,9 @@ impl ManualAgent for FakeAgent {
     }
 
     fn continuar(&self, dir: &Path, progress: &mut dyn FnMut(&str)) -> PortResult<AgentOutcome> {
-        self.run(dir, AgentMode::Gerar, progress)
+        let r = self.run(dir, AgentMode::Gerar, progress)?;
+        let _ = std::fs::remove_file(dir.join("perguntas.json"));
+        let _ = std::fs::remove_file(dir.join("respostas.json"));
+        Ok(r)
     }
 }

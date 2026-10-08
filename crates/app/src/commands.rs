@@ -2,7 +2,7 @@
 use screenmanual_app::{
     validar_id, ApiError, App, Deps, Detalhe, EstadoGravacao, ImagemUi, Inicio, PassoUi,
 };
-use screenmanual_core::domain::TranscriptionModel;
+use screenmanual_core::domain::{Perguntas, Respostas, TranscriptionModel};
 use screenmanual_core::ports::{AgentOutcome, Collection, DocNode, SessionStore};
 use screenmanual_core::queries::SessionSummary;
 use screenmanual_settings::AppConfig;
@@ -226,4 +226,28 @@ pub async fn adicionar_imagem(st: St<'_>, id: String, bytes: Vec<u8>) -> Result<
 #[tauri::command]
 pub async fn republicar(st: St<'_>, id: String, sobrescrever: bool) -> Result<String, ApiError> {
     bloq(&st, move |a| a.republicar(&id, sobrescrever)).await
+}
+
+#[tauri::command]
+pub async fn perguntas(st: St<'_>, id: String) -> Result<Option<Perguntas>, ApiError> {
+    bloq(&st, move |a| a.perguntas(&id)).await
+}
+
+#[tauri::command]
+pub async fn responder(
+    st: St<'_>,
+    id: String,
+    respostas: Respostas,
+) -> Result<AgentOutcome, ApiError> {
+    bloq(&st, move |a| a.responder(&id, &respostas)).await
+}
+
+#[tauri::command]
+pub async fn pular(st: St<'_>, id: String) -> Result<AgentOutcome, ApiError> {
+    bloq(&st, move |a| a.pular(&id)).await
+}
+
+#[tauri::command]
+pub async fn cancelar_perguntas(st: St<'_>, id: String) -> Result<(), ApiError> {
+    bloq(&st, move |a| a.cancelar_perguntas(&id)).await
 }

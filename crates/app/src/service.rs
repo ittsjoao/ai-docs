@@ -7,10 +7,12 @@ use std::time::Duration;
 
 use screenmanual_agent::LoginRequired;
 use screenmanual_core::commands::{
-    add_operator_image, approve, generate_manual, image_path, improve_manual, process_session,
+    add_operator_image, answer_questions, approve, cancel_questions, generate_manual, image_path, improve_manual, process_session,
     republish, set_step_image, start_recording, stop_recording, CommandError,
 };
-use screenmanual_core::domain::{Activity, SessionStatus, TranscribeConfig, TranscriptionModel};
+use screenmanual_core::domain::{
+    Activity, Perguntas, Respostas, SessionStatus, TranscribeConfig, TranscriptionModel,
+};
 use screenmanual_core::ports::{
     AgentOutcome, AgentResult, Collection, DocNode, Imaging, ManualAgent, Recorder,
     RecordingHandle, SessionStore, Transcriber, Validacao, Wiki,
@@ -71,6 +73,7 @@ pub enum Acao {
     Melhorar,
     Aprovar,
     Republicar,
+    Responder,
 }
 
 /// (título, corpo) da notificação do Windows ao fim de uma ação.
@@ -116,6 +119,11 @@ pub enum Evento {
     Gravacao {
         estado: EstadoGravacao,
         id: String,
+    },
+    /// A IA parou com dúvidas; a UI abre o diálogo e o bin notifica.
+    Perguntas {
+        id: String,
+        titulo: String,
     },
     /// Fim de qualquer ação longa; o bin sempre notifica.
     Fim {
@@ -740,12 +748,7 @@ impl<D: Deps> App<D> {
                 &mut |p| self.progresso(id, p),
             )?)
         })();
-        self.liberar(
-            id,
-            Acao::Gerar,
-            r.as_ref().err(),
-            r.as_ref().ok().and_then(|x| x.url().map(str::to_string)),
-        );
+        self.concluir_geracao(id, Acao::Gerar, &r);
         r
     }
 
@@ -773,13 +776,84 @@ impl<D: Deps> App<D> {
                 &mut |p| self.progresso(id, p),
             )?)
         })();
+        self.concluir_geracao(id, Acao::Melhorar, &r);
+        r
+    }
+
+    /// Solta a trava; com perguntas emite `Perguntas` em vez de `Fim`.
+    fn concluir_geracao(&self, id: &str, acao: Acao, r: &Result<AgentOutcome, ApiError>) {
+        if let Ok(AgentOutcome::Perguntas(_)) = r {
+            {
+                let mut st = self.st();
+                st.atividade.remove(id);
+                if st.geracao.as_ref().is_some_and(|g| g.0 == id) {
+                    st.geracao = None;
+                }
+            }
+            (self.emit)(Evento::Sessao { id: id.into() });
+            (self.emit)(Evento::Perguntas {
+                id: id.into(),
+                titulo: self.titulo(id),
+            });
+            return;
+        }
         self.liberar(
             id,
-            Acao::Melhorar,
+            acao,
             r.as_ref().err(),
             r.as_ref().ok().and_then(|x| x.url().map(str::to_string)),
         );
+    }
+
+    pub fn perguntas(&self, id: &str) -> Result<Option<Perguntas>, ApiError> {
+        validar_id(id)?;
+        Ok(self.deps.store().perguntas(id)?)
+    }
+
+    pub fn responder(&self, id: &str, respostas: &Respostas) -> Result<AgentOutcome, ApiError> {
+        validar_id(id)?;
+        let p = self
+            .deps
+            .store()
+            .perguntas(id)?
+            .ok_or_else(|| ApiError::new("estado_invalido", "não há perguntas pendentes"))?;
+        respostas
+            .validar(&p)
+            .map_err(|e| ApiError::new("outro", e))?;
+        let (cfg, token) = self.credenciais()?;
+        let cancel = self.ocupar_geracao(id)?;
+        let r = (|| -> Result<AgentOutcome, ApiError> {
+            let agent = self.deps.agent(&cfg, &token, cancel)?;
+            Ok(answer_questions(
+                self.deps.store(),
+                &agent,
+                id,
+                respostas,
+                &mut |p| self.progresso(id, p),
+            )?)
+        })();
+        self.concluir_geracao(id, Acao::Responder, &r);
         r
+    }
+
+    pub fn pular(&self, id: &str) -> Result<AgentOutcome, ApiError> {
+        self.responder(
+            id,
+            &Respostas {
+                pular: true,
+                ..Respostas::default()
+            },
+        )
+    }
+
+    pub fn cancelar_perguntas(&self, id: &str) -> Result<(), ApiError> {
+        validar_id(id)?;
+        if self.detalhe(id)?.resumo.status != SessionStatus::Awaiting {
+            return Err(ApiError::new("estado_invalido", "não há perguntas pendentes"));
+        }
+        cancel_questions(self.deps.store(), id)?;
+        (self.emit)(Evento::Sessao { id: id.into() });
+        Ok(())
     }
 
     pub fn aprovar(&self, id: &str) -> Result<(), ApiError> {

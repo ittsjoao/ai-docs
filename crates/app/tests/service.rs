@@ -9,7 +9,7 @@ use std::time::Duration;
 use fakes::*;
 use screenmanual_app::*;
 use screenmanual_core::commands::CommandError;
-use screenmanual_core::domain::{SessionStatus, TranscriptionModel};
+use screenmanual_core::domain::{Respostas, SessionStatus, TranscriptionModel};
 use screenmanual_core::ports::{AgentOutcome, SessionStore};
 use screenmanual_settings::AppConfig;
 
@@ -598,4 +598,75 @@ fn imagem_invalida_e_miniatura_estranha_sao_recusadas() {
         app.miniatura(&id, "u009").unwrap_err().kind,
         "estado_invalido"
     );
+}
+
+fn erp() -> Respostas {
+    serde_json::from_str(r#"{"respostas":[{"id":"q1","escolhas":["ERP"]}]}"#).unwrap()
+}
+
+#[test]
+fn ia_pergunta_solta_a_trava_e_continua_com_as_respostas() {
+    let (app, rx) = app("perguntas");
+    let id = pronta(&app, "Manual");
+    *app.deps().plano.lock().unwrap() = Plano::Perguntas;
+    eventos(&rx); // descarta o Fim do processar de `pronta`
+    let r = app.gerar(&id, "col", None, false).unwrap();
+    assert!(matches!(r, AgentOutcome::Perguntas(_)));
+    assert_eq!(status(&app, &id), SessionStatus::Awaiting);
+    assert_eq!(app.inicio().unwrap().gerando, None, "a trava de geração foi solta");
+    let ev = eventos(&rx);
+    assert!(ev.iter().any(|e| matches!(e, Evento::Perguntas { .. })), "{ev:?}");
+    assert!(!ev.iter().any(|e| matches!(e, Evento::Fim { .. })), "perguntas não são fim: {ev:?}");
+    assert_eq!(app.perguntas(&id).unwrap().unwrap().perguntas[0].id, "q1");
+
+    assert_eq!(app.responder(&id, &Respostas::default()).unwrap_err().kind, "outro");
+    let r = app.responder(&id, &erp()).unwrap();
+    assert!(matches!(r, AgentOutcome::Pronto(_)));
+    assert_eq!(status(&app, &id), SessionStatus::Draft);
+    assert!(eventos(&rx).iter().any(|e| matches!(e, Evento::Fim { acao: Acao::Responder, url: Some(_), .. })));
+}
+
+#[test]
+fn perguntas_sobrevivem_a_reinicio_do_app() {
+    let (app, _rx) = app("perguntas-reinicio");
+    let id = pronta(&app, "Manual");
+    *app.deps().plano.lock().unwrap() = Plano::Perguntas;
+    app.gerar(&id, "col", None, false).unwrap();
+    let root = app.deps().store.dir(&id).parent().unwrap().parent().unwrap().to_path_buf();
+    drop(app);
+    let novo = App::new(
+        FakeDeps::new(&root.join("sessions")),
+        root.join("config.json"),
+        Box::new(|_| {}),
+    );
+    assert_eq!(novo.detalhe(&id).unwrap().resumo.status, SessionStatus::Awaiting);
+    assert!(matches!(novo.pular(&id).unwrap(), AgentOutcome::Pronto(_)));
+}
+
+#[test]
+fn responder_duas_vezes_ao_mesmo_tempo_da_ocupado() {
+    let (app, _rx) = app("perguntas-duplo");
+    let id = pronta(&app, "Manual");
+    *app.deps().plano.lock().unwrap() = Plano::Perguntas;
+    app.gerar(&id, "col", None, false).unwrap();
+    *app.deps().plano.lock().unwrap() = Plano::EsperaCancelar;
+    let (a, i) = (app.clone(), id.clone());
+    let t = std::thread::spawn(move || a.responder(&i, &erp()));
+    for _ in 0..200 {
+        if app.inicio().unwrap().gerando.is_some() { break; }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(app.responder(&id, &erp()).unwrap_err().kind, "ocupado");
+    app.cancelar();
+    assert!(t.join().unwrap().is_err());
+}
+
+#[test]
+fn cancelar_perguntas_volta_a_pronta() {
+    let (app, _rx) = app("perguntas-cancelar");
+    let id = pronta(&app, "Manual");
+    *app.deps().plano.lock().unwrap() = Plano::Perguntas;
+    app.gerar(&id, "col", None, false).unwrap();
+    app.cancelar_perguntas(&id).unwrap();
+    assert_eq!(status(&app, &id), SessionStatus::Ready);
 }
