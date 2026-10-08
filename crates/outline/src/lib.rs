@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use reqwest::blocking::{multipart, Client};
-use screenmanual_core::ports::{Collection, DocInfo, PortResult, Wiki};
+use screenmanual_core::ports::{Collection, DocInfo, DocNode, PortResult, Wiki};
 use serde_json::{json, Value};
 
 pub struct Outline {
@@ -39,6 +39,38 @@ pub(crate) fn doc_info(base: &str, data: &Value) -> Result<DocInfo> {
         revision: data["revision"].as_u64().unwrap_or(0),
         text: data["text"].as_str().unwrap_or("").to_string(),
     })
+}
+
+pub(crate) fn parse_tree(data: &Value) -> Vec<DocNode> {
+    data.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|n| {
+            Some(DocNode {
+                id: n["id"].as_str()?.to_string(),
+                title: n["title"].as_str()?.to_string(),
+                children: parse_tree(&n["children"]),
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn create_body(
+    collection_id: &str,
+    parent: Option<&str>,
+    title: &str,
+    icon: &str,
+    text: &str,
+) -> Value {
+    let mut b = json!({ "collectionId": collection_id, "title": title, "icon": icon, "text": text, "publish": false });
+    if let Some(p) = parent {
+        b["parentDocumentId"] = p.into();
+    }
+    b
+}
+
+pub(crate) fn update_body(id: &str, title: &str, icon: &str, text: &str) -> Value {
+    json!({ "id": id, "title": title, "icon": icon, "text": text })
 }
 
 pub(crate) fn parse_collections(data: &Value) -> Vec<Collection> {
@@ -179,21 +211,32 @@ impl Wiki for Outline {
             .to_string())
     }
 
-    fn create_draft(&self, collection_id: &str, title: &str, text: &str) -> PortResult<DocInfo> {
+    fn documents(&self, collection_id: &str) -> PortResult<Vec<DocNode>> {
+        Ok(parse_tree(&self.post(
+            "collections.documents",
+            json!({ "id": collection_id }),
+        )?))
+    }
+
+    fn create_draft(
+        &self,
+        collection_id: &str,
+        parent: Option<&str>,
+        title: &str,
+        icon: &str,
+        text: &str,
+    ) -> PortResult<DocInfo> {
         let data = self.post(
             "documents.create",
-            json!({ "collectionId": collection_id, "title": title, "text": text, "publish": false }),
+            create_body(collection_id, parent, title, icon, text),
         )?;
         doc_info(&self.base, &data)
     }
 
-    fn update(&self, id: &str, title: &str, text: &str) -> PortResult<DocInfo> {
+    fn update(&self, id: &str, title: &str, icon: &str, text: &str) -> PortResult<DocInfo> {
         doc_info(
             &self.base,
-            &self.post(
-                "documents.update",
-                json!({ "id": id, "title": title, "text": text }),
-            )?,
+            &self.post("documents.update", update_body(id, title, icon, text))?,
         )
     }
 
@@ -282,6 +325,42 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("id do documento"));
+    }
+
+    #[test]
+    fn tree_is_parsed_recursively_and_incomplete_nodes_skipped() {
+        let data = json!([
+            {"id": "a", "title": "Redes", "children": [
+                {"id": "b", "title": "MikroTik", "children": []},
+                {"title": "sem id", "children": []}
+            ]},
+            {"id": "c"}
+        ]);
+        assert_eq!(
+            parse_tree(&data),
+            vec![DocNode {
+                id: "a".into(),
+                title: "Redes".into(),
+                children: vec![DocNode {
+                    id: "b".into(),
+                    title: "MikroTik".into(),
+                    children: vec![]
+                }]
+            }]
+        );
+    }
+
+    #[test]
+    fn create_and_update_send_icon_and_optional_parent() {
+        let b = create_body("col", Some("pai"), "T", "📘", "x");
+        assert_eq!(
+            (b["parentDocumentId"].as_str(), b["icon"].as_str()),
+            (Some("pai"), Some("📘"))
+        );
+        assert!(create_body("col", None, "T", "📘", "x")
+            .get("parentDocumentId")
+            .is_none());
+        assert_eq!(update_body("d", "T", "🧾", "x")["icon"], "🧾");
     }
 
     #[test]

@@ -105,7 +105,7 @@ fn main() -> Result<()> {
                 .cloned()
                 .or(cfg.colecao_padrao.clone())
                 .context("informe a coleção ou defina colecao_padrao no config.json")?;
-            generate_manual(&store, &agent, id, &collection, &mut progress)?
+            generate_manual(&store, &agent, id, &collection, None, &mut progress)?
         }
         "melhoria" => {
             let text = args.get(2).context(USAGE)?;

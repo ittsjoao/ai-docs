@@ -139,6 +139,8 @@ mod tests {
                 passos: vec![passo],
             }],
             descartados: vec![],
+            icone: None,
+            extras: vec![],
         }
     }
 

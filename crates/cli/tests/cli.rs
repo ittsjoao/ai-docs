@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use screenmanual_cli::run;
-use screenmanual_core::ports::{Collection, DocInfo, PortResult, Wiki};
+use screenmanual_core::ports::{Collection, DocInfo, DocNode, PortResult, Wiki};
 
 #[derive(Default)]
 struct Inner {
@@ -44,7 +44,17 @@ impl Wiki for FakeWiki {
         s.attachments.insert(id.clone(), bytes.to_vec());
         Ok(id)
     }
-    fn create_draft(&self, _col: &str, _title: &str, text: &str) -> PortResult<DocInfo> {
+    fn documents(&self, _col: &str) -> PortResult<Vec<DocNode>> {
+        Ok(vec![])
+    }
+    fn create_draft(
+        &self,
+        _col: &str,
+        _parent: Option<&str>,
+        _title: &str,
+        _icon: &str,
+        text: &str,
+    ) -> PortResult<DocInfo> {
         self.0
             .lock()
             .unwrap()
@@ -52,7 +62,7 @@ impl Wiki for FakeWiki {
             .insert("doc-1".into(), (text.into(), 1));
         self.doc("doc-1")
     }
-    fn update(&self, id: &str, _title: &str, text: &str) -> PortResult<DocInfo> {
+    fn update(&self, id: &str, _title: &str, _icon: &str, text: &str) -> PortResult<DocInfo> {
         {
             let mut s = self.0.lock().unwrap();
             let rev = s.docs.get(id).map_or(0, |d| d.1) + 1;

@@ -43,6 +43,12 @@ impl FakeStore {
     fn edit<T>(&self, id: &str, f: impl FnOnce(&mut Sess) -> T) -> T {
         f(self.s.lock().unwrap().entry(id.to_string()).or_default())
     }
+    pub fn edit_publish(&self, id: &str, f: impl FnOnce(&mut PublishState)) {
+        self.edit(id, |s| f(s.publish.as_mut().expect("publish.json")));
+    }
+    pub fn edit_manual(&self, id: &str, f: impl FnOnce(&mut Manual)) {
+        self.edit(id, |s| f(s.manual.as_mut().expect("steps.json")));
+    }
 }
 
 impl SessionStore for FakeStore {
@@ -246,6 +252,10 @@ impl ManualAgent for FakeAgent {
 pub struct FakeWiki {
     pub docs: Mutex<HashMap<String, (String, String, u64, bool)>>,
     pub uploads: Mutex<Vec<(String, Vec<u8>)>>,
+    /// (pai, ícone) de cada create_draft
+    pub created: Mutex<Vec<(Option<String>, String)>>,
+    /// ícone de cada update
+    pub updated_icons: Mutex<Vec<String>>,
 }
 
 impl FakeWiki {
@@ -292,7 +302,25 @@ impl Wiki for FakeWiki {
         uploads.push((name.to_string(), bytes.to_vec()));
         Ok(format!("att-{}", uploads.len()))
     }
-    fn create_draft(&self, _collection_id: &str, title: &str, text: &str) -> Result<DocInfo> {
+    fn documents(&self, _collection_id: &str) -> Result<Vec<DocNode>> {
+        Ok(vec![DocNode {
+            id: "pai-1".into(),
+            title: "Redes".into(),
+            children: vec![],
+        }])
+    }
+    fn create_draft(
+        &self,
+        _collection_id: &str,
+        parent: Option<&str>,
+        title: &str,
+        icon: &str,
+        text: &str,
+    ) -> Result<DocInfo> {
+        self.created
+            .lock()
+            .unwrap()
+            .push((parent.map(str::to_string), icon.to_string()));
         let id = format!("doc-{}", self.docs.lock().unwrap().len() + 1);
         self.docs
             .lock()
@@ -300,7 +328,8 @@ impl Wiki for FakeWiki {
             .insert(id.clone(), (title.to_string(), text.to_string(), 1, false));
         self.info_of(&id)
     }
-    fn update(&self, id: &str, title: &str, text: &str) -> Result<DocInfo> {
+    fn update(&self, id: &str, title: &str, icon: &str, text: &str) -> Result<DocInfo> {
+        self.updated_icons.lock().unwrap().push(icon.to_string());
         self.edit_doc(id, |d| {
             d.0 = title.to_string();
             d.1 = text.to_string();
@@ -401,6 +430,8 @@ pub fn manual_with_image(img: &str) -> Manual {
             }],
         }],
         descartados: vec![],
+        icone: None,
+        extras: vec![],
     }
 }
 

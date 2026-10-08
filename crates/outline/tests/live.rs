@@ -28,7 +28,13 @@ fn draft_with_image_roundtrip() {
 
     let text = format!("Teste do screenManual.\n\n![img](/api/attachments.redirect?id={att})\n");
     let doc = wiki
-        .create_draft(&collection, "Teste screenManual (pode apagar)", &text)
+        .create_draft(
+            &collection,
+            None,
+            "Teste screenManual (pode apagar)",
+            "📘",
+            &text,
+        )
         .unwrap();
     println!("rascunho: {}", doc.url);
     let info = wiki.info(&doc.id).unwrap();
@@ -38,6 +44,7 @@ fn draft_with_image_roundtrip() {
         .update(
             &doc.id,
             "Teste screenManual (pode apagar)",
+            "📘",
             &format!("{text}\nAtualizado."),
         )
         .unwrap();

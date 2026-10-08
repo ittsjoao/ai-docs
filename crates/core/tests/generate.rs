@@ -16,7 +16,9 @@ fn ready() -> FakeStore {
 }
 
 fn drafted(wiki: &FakeWiki) -> FakeStore {
-    let doc = wiki.create_draft("col-1", "T", "texto").unwrap();
+    let doc = wiki
+        .create_draft("col-1", None, "T", "📘", "texto")
+        .unwrap();
     let mut st = PublishState::new("col-1");
     st.outline_id = Some(doc.id);
     st.revision = Some(doc.revision);
@@ -34,7 +36,8 @@ fn drafted(wiki: &FakeWiki) -> FakeStore {
 #[test]
 fn generate_requires_candidates() {
     let store = FakeStore::with("s1", Sess::default());
-    let err = generate_manual(&store, &FakeAgent::ok(), "s1", "col-1", &mut |_| {}).unwrap_err();
+    let err =
+        generate_manual(&store, &FakeAgent::ok(), "s1", "col-1", None, &mut |_| {}).unwrap_err();
     assert!(matches!(err, CommandError::InvalidState(_)));
 }
 
@@ -43,7 +46,7 @@ fn generate_saves_collection_and_runs_agent() {
     let store = ready();
     let agent = FakeAgent::ok();
     let mut seen = vec![];
-    let res = generate_manual(&store, &agent, "s1", "col-9", &mut |m: &str| {
+    let res = generate_manual(&store, &agent, "s1", "col-9", None, &mut |m: &str| {
         seen.push(m.to_string())
     })
     .unwrap();
@@ -61,6 +64,7 @@ fn agent_failure_is_recorded() {
         &FakeAgent::failing("timeout"),
         "s1",
         "col-1",
+        None,
         &mut |_| {}
     )
     .is_err());
@@ -130,4 +134,20 @@ fn improve_requires_text_and_draft() {
         improve_manual(&ready(), &wiki, &agent, "s1", "x", false, &mut |_| {}).unwrap_err(),
         CommandError::InvalidState(_)
     ));
+}
+
+#[test]
+fn gerar_grava_o_pai_no_publish_json() {
+    let store = ready();
+    let agent = FakeAgent::ok();
+    generate_manual(&store, &agent, "s1", "col-1", Some("pai-1"), &mut |_| {}).unwrap();
+    assert_eq!(
+        store
+            .get("s1")
+            .publish
+            .unwrap()
+            .parent_document_id
+            .as_deref(),
+        Some("pai-1")
+    );
 }

@@ -198,10 +198,28 @@ impl Wiki for FakeWiki {
     fn upload_image(&self, _doc: Option<&str>, _name: &str, _bytes: &[u8]) -> PortResult<String> {
         bail!("não usado")
     }
-    fn create_draft(&self, _c: &str, _t: &str, _x: &str) -> PortResult<DocInfo> {
+    fn documents(&self, _c: &str) -> PortResult<Vec<DocNode>> {
+        Ok(vec![DocNode {
+            id: "pai".into(),
+            title: "Redes".into(),
+            children: vec![DocNode {
+                id: "filho".into(),
+                title: "MikroTik".into(),
+                children: vec![],
+            }],
+        }])
+    }
+    fn create_draft(
+        &self,
+        _c: &str,
+        _p: Option<&str>,
+        _t: &str,
+        _i: &str,
+        _x: &str,
+    ) -> PortResult<DocInfo> {
         bail!("não usado")
     }
-    fn update(&self, _id: &str, _t: &str, _x: &str) -> PortResult<DocInfo> {
+    fn update(&self, _id: &str, _t: &str, _i: &str, _x: &str) -> PortResult<DocInfo> {
         bail!("não usado")
     }
     fn info(&self, id: &str) -> PortResult<DocInfo> {

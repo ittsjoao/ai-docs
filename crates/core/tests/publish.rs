@@ -138,3 +138,23 @@ fn approve_keeps_evidence_of_manual_edit() {
     let err = improve_manual(&store, &wiki, &agent, "s1", "x", false, &mut |_| {}).unwrap_err();
     assert!(matches!(err, CommandError::EditedManually { .. }), "{err}");
 }
+
+#[test]
+fn create_leva_pai_e_icone_e_update_leva_icone() {
+    let store = session_with_manual("c001");
+    store.edit_publish("s1", |p| p.parent_document_id = Some("pai-1".into()));
+    let wiki = FakeWiki::default();
+    publish_draft(&store, &wiki, "s1").unwrap();
+    assert_eq!(
+        *wiki.created.lock().unwrap(),
+        vec![(Some("pai-1".to_string()), ICONE_PADRAO.to_string())]
+    );
+    store.edit_manual("s1", |m| m.icone = Some("🧾".into()));
+    publish_draft(&store, &wiki, "s1").unwrap();
+    assert_eq!(*wiki.updated_icons.lock().unwrap(), vec!["🧾".to_string()]);
+    assert_eq!(
+        wiki.created.lock().unwrap().len(),
+        1,
+        "o pai só vale na criação"
+    );
+}

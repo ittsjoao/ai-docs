@@ -8,6 +8,7 @@ pub fn generate_manual<S: SessionStore, A: ManualAgent>(
     agent: &A,
     id: &str,
     collection_id: &str,
+    parent: Option<&str>,
     progress: &mut dyn FnMut(&str),
 ) -> CommandResult<AgentResult> {
     if !store.facts(id)?.has_candidates {
@@ -20,6 +21,7 @@ pub fn generate_manual<S: SessionStore, A: ManualAgent>(
             .publish_state(id)?
             .unwrap_or_else(|| PublishState::new(collection_id));
         state.collection_id = collection_id.to_string();
+        state.parent_document_id = parent.map(str::to_string);
         store.save_publish_state(id, &state)?;
         Ok(agent.run(&store.dir(id), AgentMode::Gerar, progress)?)
     })();

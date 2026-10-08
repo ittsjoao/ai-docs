@@ -96,11 +96,28 @@ pub struct Collection {
     pub name: String,
 }
 
+/// Nó da árvore de documentos de uma coleção (`collections.documents`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DocNode {
+    pub id: String,
+    pub title: String,
+    pub children: Vec<DocNode>,
+}
+
 pub trait Wiki {
     fn collections(&self) -> PortResult<Vec<Collection>>;
+    /// Árvore inteira de documentos da coleção.
+    fn documents(&self, collection_id: &str) -> PortResult<Vec<DocNode>>;
     fn upload_image(&self, doc_id: Option<&str>, name: &str, bytes: &[u8]) -> PortResult<String>;
-    fn create_draft(&self, collection_id: &str, title: &str, text: &str) -> PortResult<DocInfo>;
-    fn update(&self, id: &str, title: &str, text: &str) -> PortResult<DocInfo>;
+    fn create_draft(
+        &self,
+        collection_id: &str,
+        parent: Option<&str>,
+        title: &str,
+        icon: &str,
+        text: &str,
+    ) -> PortResult<DocInfo>;
+    fn update(&self, id: &str, title: &str, icon: &str, text: &str) -> PortResult<DocInfo>;
     fn info(&self, id: &str) -> PortResult<DocInfo>;
     fn publish(&self, id: &str) -> PortResult<DocInfo>;
     fn download_attachment(&self, attachment_id: &str) -> PortResult<Vec<u8>>;

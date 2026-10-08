@@ -695,6 +695,7 @@ impl<D: Deps> App<D> {
                 &agent,
                 id,
                 colecao.trim(),
+                None,
                 &mut |p| self.progresso(id, p),
             )?)
         })();

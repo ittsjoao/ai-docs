@@ -6,7 +6,9 @@ use screenmanual_core::ports::*;
 #[test]
 fn fake_wiki_tracks_revisions_and_attachments() {
     let wiki = FakeWiki::default();
-    let doc = wiki.create_draft("col-1", "T", "texto").unwrap();
+    let doc = wiki
+        .create_draft("col-1", None, "T", "📘", "texto")
+        .unwrap();
     assert_eq!((doc.id.as_str(), doc.revision), ("doc-1", 1));
     wiki.external_edit("doc-1");
     assert_eq!(wiki.info("doc-1").unwrap().revision, 2);

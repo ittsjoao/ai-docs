@@ -49,9 +49,16 @@ pub fn publish_draft<S: SessionStore, W: Wiki>(
     store.save_publish_state(id, &state)?;
 
     let text = rewrite_images(strip_title(strip_frontmatter(&rendered.markdown)), &links);
+    let (title, icon) = (manual.titulo.trim(), manual.icone_efetivo());
     let doc = match state.outline_id.as_deref() {
-        None => wiki.create_draft(&state.collection_id, manual.titulo.trim(), &text)?,
-        Some(oid) => wiki.update(oid, manual.titulo.trim(), &text)?,
+        None => wiki.create_draft(
+            &state.collection_id,
+            state.parent_document_id.as_deref(),
+            title,
+            icon,
+            &text,
+        )?,
+        Some(oid) => wiki.update(oid, title, icon, &text)?,
     };
     state.outline_id = Some(doc.id);
     state.url = Some(doc.url);

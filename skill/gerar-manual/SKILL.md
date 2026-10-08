@@ -28,11 +28,12 @@ Você está na **pasta de uma sessão** do screenManual. O operador gravou um pr
 2. **Imagens.** Leia primeiro os recortes (`crops/<id>.png`) dos candidatos sem as flags `noise` ou `no_change`, e um print de contexto (`crops/<id>_ctx.png`) por janela. Leia os demais só quando precisar.
 3. **Escreva `steps.json`:**
    ```json
-   {"schema_version":1,"titulo":"…","objetivo":"…","pre_requisitos":["…"],
+   {"schema_version":1,"titulo":"…","icone":"🧾","objetivo":"…","pre_requisitos":["…"],
     "secoes":[{"titulo":"…","passos":[
       {"candidatos":["c012"],"imagem":"c012","texto":"Preencha **CNPJ** com o CNPJ do cliente, sem pontuação.","aviso":null,"dica":null}]}],
     "descartados":[{"id":"c007","motivo":"clique acidental, desfeito com Esc"}]}
    ```
+   - `icone` é **um emoji** que represente o assunto do manual (ex.: 🖨️ impressora, 🌐 rede, 🧾 nota fiscal). Na melhoria, mantenha o atual, a não ser que o pedido seja trocar.
    - `imagem` é o id de um candidato **com** `crop`, ou `null`.
    - **Imagem só quando necessário:** use quando ela ajuda a achar o elemento (menu, aba, botão no meio de outros) ou a conferir o resultado. Passos óbvios pelo texto, como pressionar **Enter**, clicar em **OK** ou **Apply** logo após o passo anterior, ou digitar num campo que a imagem anterior já mostra, ficam com `"imagem": null`. Tirar a imagem **não** é motivo para juntar passos: cada passo continua com uma ação só ("Clique em **IP**." e "Clique em **DHCP Server**." são dois passos).
    - Todo candidato relevante entra em algum passo ou em `descartados`, com o motivo.
