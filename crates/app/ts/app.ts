@@ -18,6 +18,8 @@ interface Inicio {
   gravacao: Gravacao; gravando: string | null; gerando: string | null;
   modelo_atual: Modelo; modelos: { modelo: Modelo; baixado: boolean }[];
 }
+interface PassoUi { secao: string; n: number; texto: string; imagem: string | null; }
+interface ImagemUi { id: string; origem: "gravacao" | "operador"; }
 interface Colecao { id: string; name: string; }
 interface DocNode { id: string; title: string; children: DocNode[]; }
 interface Config { outline_url: string; colecao_padrao: string | null; documento_padrao: string | null; transcricao: { modelo: Modelo; vocabulario: boolean }; [k: string]: unknown; }
@@ -62,6 +64,10 @@ const st = {
   login: false,
   /** "Tentar de novo": a última ação disparada para cada sessão (A9). */
   ultima: {} as Record<string, () => Promise<void>>,
+  passos: [] as PassoUi[],
+  alterado: {} as Record<string, boolean>,
+  urls: {} as Record<string, string>,
+  passoImg: 0,
 };
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
@@ -81,6 +87,8 @@ async function carregar(): Promise<void> {
   st.inicio = await invoke<Inicio>("inicio");
   st.sessoes = await invoke<Resumo[]>("sessoes");
   st.det = st.sel ? await invoke<Detalhe>("detalhe", { id: st.sel }).catch(() => null) : null;
+  st.passos = st.det && (st.det.status === "draft" || st.det.status === "published")
+    ? await invoke<PassoUi[]>("passos", { id: st.det.id }).catch(() => []) : [];
   if (!st.inicio.configurado && st.tela !== "config") await abrirConfig();
   render();
 }
@@ -108,6 +116,8 @@ async function selecionar(id: string): Promise<void> {
   st.colGerar = null;
   st.tela = "sessao";
   st.det = await invoke<Detalhe>("detalhe", { id });
+  st.passos = st.det && (st.det.status === "draft" || st.det.status === "published")
+    ? await invoke<PassoUi[]>("passos", { id: st.det.id }).catch(() => []) : [];
   if (st.inicio?.configurado && st.colecoes.length === 0) {
     st.colecoes = await carregarColecoes();
   }
@@ -257,6 +267,7 @@ function renderPainel(): void {
   if (d.url) h += `<p><a href="#" data-acao="link" data-url="${esc(d.url)}">🔗 ${esc(d.url)}</a></p>`;
   h += d.validacao.map((v) => `<p class="aviso">⚠ ${esc(v.tipo)}: ${esc(v.detalhe)}</p>`).join("");
   trocar(p, h + htmlAcoes(d));
+  carregarMiniaturas(p, d.id);
 }
 
 function htmlAcoes(d: Detalhe): string {
@@ -274,8 +285,8 @@ function htmlAcoes(d: Detalhe): string {
     case "interrupted":
     case "stopped": return `<p>Gravação ainda não processada.</p><button data-acao="processar">Processar</button>`;
     case "ready": return formGerar(travado) + dica + `<button data-acao="reprocessar" class="sec">Refazer transcrição</button>`;
-    case "draft": return `<button data-acao="aprovar">✓ Aprovar e publicar</button>` + formMelhoria(travado) + dica;
-    case "published": return formMelhoria(travado) + dica;
+    case "draft": return `<button data-acao="aprovar">✓ Aprovar e publicar</button>` + htmlPassos(d) + formMelhoria(travado) + dica;
+    case "published": return htmlPassos(d) + formMelhoria(travado) + dica;
     case "error": {
       const repetir = st.ultima[d.id] ? `<button data-acao="repetir">Tentar de novo</button> ` : "";
       const fundo = d.url ? formMelhoria(travado)
@@ -367,12 +378,110 @@ function htmlConfig(): string {
   </form>`;
 }
 
+// ---------- imagens do rascunho ----------
+
+/** URL blob da miniatura, com cache por sessão+imagem. */
+async function urlImagem(id: string, imagem: string): Promise<string> {
+  const k = `${id}/${imagem}`;
+  if (!st.urls[k]) {
+    const buf = await invoke<ArrayBuffer>("miniatura", { id, imagem });
+    st.urls[k] = URL.createObjectURL(new Blob([buf], { type: "image/png" }));
+  }
+  return st.urls[k];
+}
+
+function htmlPassos(d: Detalhe): string {
+  if (st.passos.length === 0) return "";
+  const linhas = st.passos.map((p) => `<div class="passo">
+    ${p.imagem ? `<img data-mini="${esc(p.imagem)}" alt="">` : `<span class="sem">sem imagem</span>`}
+    <p><strong>${p.n}.</strong> ${esc(p.texto.replace(/\*\*/g, ""))}</p>
+    <button data-acao="img-passo" data-n="${p.n}" class="sec" title="Imagem do passo">🖼</button></div>`).join("");
+  const publicar = st.alterado[d.id] ? `<button data-acao="republicar">Publicar alterações</button>` : "";
+  return `<h3>Passos</h3>${linhas}${publicar}`;
+}
+
+/** Preenche os <img data-mini> depois que o HTML entrou no DOM. */
+function carregarMiniaturas(raiz: ParentNode, id: string): void {
+  raiz.querySelectorAll<HTMLImageElement>("img[data-mini]").forEach((img) => {
+    urlImagem(id, img.dataset.mini!).then((u) => (img.src = u)).catch(() => (img.alt = "?"));
+  });
+}
+
+async function abrirImagens(n: number): Promise<void> {
+  const id = st.det!.id;
+  st.passoImg = n;
+  const atual = st.passos.find((p) => p.n === n)?.imagem ?? null;
+  const lista = await invoke<ImagemUi[]>("imagens", { id });
+  const g = $("#galeria");
+  g.innerHTML = lista.map((i) =>
+    `<img data-mini="${esc(i.id)}" data-escolher="${esc(i.id)}" class="${i.id === atual ? "sel" : ""}" title="${i.origem === "operador" ? "sua imagem" : i.id}" alt="">`).join("");
+  carregarMiniaturas(g, id);
+  $<HTMLDialogElement>("#imagens").showModal();
+}
+
+$<HTMLDialogElement>("#imagens").addEventListener("click", (e) => {
+  const v = (e.target as HTMLElement).closest("button")?.value;
+  if (v === "sem") escolherImagem(null);
+  if (v === "fechar") $<HTMLDialogElement>("#imagens").close();
+});
+$<HTMLInputElement>("#arquivo").addEventListener("change", (e) => {
+  const f = (e.target as HTMLInputElement).files?.[0];
+  (e.target as HTMLInputElement).value = "";
+  if (f) enviarArquivo(f);
+});
+$<HTMLDialogElement>("#imagens").addEventListener("paste", (e) => {
+  const item = [...(e.clipboardData?.items ?? [])].find((i) => i.type.startsWith("image/"));
+  const f = item?.getAsFile();
+  if (f) { e.preventDefault(); enviarArquivo(f); }
+});
+
+async function escolherImagem(imagem: string | null): Promise<void> {
+  const id = st.det!.id;
+  $<HTMLDialogElement>("#imagens").close();
+  await tentar(async () => {
+    await invoke("definir_imagem", { id, passo: st.passoImg, imagem });
+    st.alterado[id] = true;
+  });
+}
+
+async function enviarArquivo(blob: Blob): Promise<void> {
+  const id = st.det!.id;
+  const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+  try {
+    const img = await invoke<string>("adicionar_imagem", { id, bytes });
+    await escolherImagem(img);
+  } catch (e) {
+    $<HTMLDialogElement>("#imagens").close();
+    st.aviso = (e as ApiError).mensagem ?? String(e);
+    render();
+  }
+}
+
+async function republicar(id: string, sobrescrever = false): Promise<void> {
+  if (!sobrescrever && st.det?.status === "published" &&
+    !(await perguntar("Isto altera o documento publicado. Continuar?"))) return;
+  try {
+    await invoke("republicar", { id, sobrescrever });
+    delete st.alterado[id];
+  } catch (e) {
+    const err = e as ApiError;
+    if (err.kind === "editado_manualmente" && !sobrescrever &&
+      (await perguntar(`O documento foi editado no Outline (revisão ${err.remote}; a última publicada pelo app é a ${err.local}). Sobrescrever?`))) {
+      return republicar(id, true);
+    }
+    st.aviso = err.mensagem ?? String(e);
+  }
+  await carregar();
+}
+
 // ---------- eventos do DOM ----------
 
 document.addEventListener("click", async (ev) => {
   const alvo = ev.target as HTMLElement;
   const li = alvo.closest<HTMLElement>("li[data-id]");
   if (li) return selecionar(li.dataset.id!);
+  const escolhida = alvo.closest<HTMLElement>("[data-escolher]");
+  if (escolhida) return escolherImagem(escolhida.dataset.escolher!);
   const b = alvo.closest<HTMLElement>("[data-acao]");
   if (!b) return;
   ev.preventDefault();
@@ -391,6 +500,8 @@ document.addEventListener("click", async (ev) => {
       finally { (b as HTMLButtonElement).disabled = false; }
       return;
     }
+    case "img-passo": return abrirImagens(Number(b.dataset.n));
+    case "republicar": return republicar(id);
     case "repetir": return st.ultima[id]?.();
     case "link": return tentar(() => invoke("abrir_link", { url: b.dataset.url }));
     case "pasta": return tentar(() => invoke("abrir_pasta", { id }));

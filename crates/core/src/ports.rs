@@ -20,6 +20,9 @@ pub trait SessionStore {
     fn candidates(&self, id: &str) -> PortResult<Vec<Candidate>>;
     fn save_candidates(&self, id: &str, candidates: &[Candidate]) -> PortResult<()>;
     fn manual(&self, id: &str) -> PortResult<Option<Manual>>;
+    fn save_manual(&self, id: &str, manual: &Manual) -> PortResult<()>;
+    /// Decodifica PNG/JPEG, grava como `crops/u###.png` (próximo número livre) e devolve `u###`.
+    fn add_image(&self, id: &str, bytes: &[u8]) -> PortResult<String>;
     /// Grava manual.md e copia cada `images[i].from` para `images[i].to`.
     fn save_rendered(&self, id: &str, rendered: &Rendered) -> PortResult<()>;
     fn read_file(&self, id: &str, rel: &str) -> PortResult<Vec<u8>>;

@@ -196,7 +196,7 @@ impl Wiki for FakeWiki {
         }])
     }
     fn upload_image(&self, _doc: Option<&str>, _name: &str, _bytes: &[u8]) -> PortResult<String> {
-        bail!("não usado")
+        Ok("att".into())
     }
     fn documents(&self, _c: &str) -> PortResult<Vec<DocNode>> {
         Ok(vec![DocNode {
@@ -217,10 +217,10 @@ impl Wiki for FakeWiki {
         _i: &str,
         _x: &str,
     ) -> PortResult<DocInfo> {
-        bail!("não usado")
+        Ok(doc("doc", self.remota.load(SeqCst)))
     }
-    fn update(&self, _id: &str, _t: &str, _i: &str, _x: &str) -> PortResult<DocInfo> {
-        bail!("não usado")
+    fn update(&self, id: &str, _t: &str, _i: &str, _x: &str) -> PortResult<DocInfo> {
+        Ok(doc(id, self.remota.fetch_add(1, SeqCst) + 1))
     }
     fn info(&self, id: &str) -> PortResult<DocInfo> {
         Ok(doc(id, self.remota.load(SeqCst)))
@@ -265,6 +265,12 @@ impl ManualAgent for FakeAgent {
                 serde_json::json!([{"tipo": "editado_manualmente", "detalhe": "exit 3"}])
             }
         };
+        if self.plano == Plano::Ok {
+            std::fs::write(
+                dir.join("steps.json"),
+                r#"{"schema_version":1,"titulo":"Manual","secoes":[{"titulo":"S","passos":[{"candidatos":[],"imagem":null,"texto":"Clique em **OK**.","aviso":null,"dica":null}]}]}"#,
+            )?;
+        }
         let revision = self.remota.load(SeqCst);
         if self.plano == Plano::Ok {
             p["outline_id"] = "doc".into();

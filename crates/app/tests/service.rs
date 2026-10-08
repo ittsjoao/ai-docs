@@ -524,3 +524,40 @@ fn pai_que_sumiu_do_outline_e_recusado() {
     );
     assert_eq!(status(&app, &id), SessionStatus::Ready, "não reservou a sessão");
 }
+
+/// PNG 1×1 válido.
+fn png() -> Vec<u8> {
+    let mut b = std::io::Cursor::new(Vec::new());
+    image::RgbImage::new(1, 1)
+        .write_to(&mut b, image::ImageFormat::Png)
+        .unwrap();
+    b.into_inner()
+}
+
+#[test]
+fn imagem_colada_entra_no_passo_e_republica() {
+    let (app, rx) = app("imagens");
+    let id = pronta(&app, "Manual");
+    app.gerar(&id, "col", None, false).unwrap();
+    let img = app.adicionar_imagem(&id, &png()).unwrap();
+    assert_eq!(img, "u001");
+    app.definir_imagem(&id, 1, Some(&img)).unwrap();
+    assert_eq!(app.passos(&id).unwrap()[0].imagem.as_deref(), Some("u001"));
+    assert!(app.imagens(&id).unwrap().iter().any(|i| i.id == "u001" && i.origem == "operador"));
+    assert_eq!(app.miniatura(&id, "u001").unwrap(), std::fs::read(app.deps().store.dir(&id).join("crops/u001.png")).unwrap());
+    eventos(&rx);
+    app.republicar(&id, false).unwrap();
+    assert!(eventos(&rx).iter().any(|e| matches!(e, Evento::Fim { acao: Acao::Republicar, url: Some(_), erro: None, .. })));
+}
+
+#[test]
+fn imagem_invalida_e_miniatura_estranha_sao_recusadas() {
+    let (app, _rx) = app("imagens-ruins");
+    let id = pronta(&app, "Manual");
+    app.gerar(&id, "col", None, false).unwrap();
+    let e = app.adicionar_imagem(&id, b"texto copiado").unwrap_err();
+    assert!(e.mensagem.contains("não é uma imagem PNG ou JPEG"), "{}", e.mensagem);
+    assert!(app.passos(&id).unwrap()[0].imagem.is_none());
+    assert_eq!(app.miniatura(&id, "../session").unwrap_err().kind, "estado_invalido");
+    assert_eq!(app.miniatura(&id, "u009").unwrap_err().kind, "estado_invalido");
+}

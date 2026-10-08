@@ -231,6 +231,24 @@ impl SessionStore for FsStore {
         read_json(&self.file(id, STEPS))
     }
 
+    fn save_manual(&self, id: &str, manual: &Manual) -> Result<()> {
+        write_json(&self.file(id, STEPS), manual)
+    }
+
+    fn add_image(&self, id: &str, bytes: &[u8]) -> Result<String> {
+        let img = image::load_from_memory(bytes)
+            .map_err(|_| anyhow::anyhow!("não é uma imagem PNG ou JPEG"))?;
+        let crops = self.dir(id).join("crops");
+        fs::create_dir_all(&crops)?;
+        let n = (1..)
+            .find(|n| !crops.join(format!("u{n:03}.png")).exists())
+            .expect("sempre há um número livre");
+        let nome = format!("u{n:03}");
+        img.save_with_format(crops.join(format!("{nome}.png")), image::ImageFormat::Png)
+            .with_context(|| format!("falha ao gravar crops/{nome}.png"))?;
+        Ok(nome)
+    }
+
     fn save_rendered(&self, id: &str, rendered: &Rendered) -> Result<()> {
         let dir = self.dir(id);
         // Validate all paths first before copying anything (atomic validation)
@@ -342,6 +360,24 @@ mod tests {
             audio_offset_ms: None,
             duration_ms: None,
         }
+    }
+
+    #[test]
+    fn add_image_converte_jpeg_e_recusa_lixo() {
+        let root = temp_root("add-image");
+        let store = FsStore::new(&root);
+        store.create(&meta("s")).unwrap();
+        let mut jpg = std::io::Cursor::new(Vec::new());
+        image::RgbImage::new(4, 4)
+            .write_to(&mut jpg, image::ImageFormat::Jpeg)
+            .unwrap();
+        assert_eq!(store.add_image("s", jpg.get_ref()).unwrap(), "u001");
+        assert_eq!(store.add_image("s", jpg.get_ref()).unwrap(), "u002");
+        assert!(image::open(root.join("s/crops/u001.png")).is_ok());
+        let e = store.add_image("s", b"texto copiado").unwrap_err();
+        assert_eq!(e.to_string(), "não é uma imagem PNG ou JPEG");
+        assert!(!root.join("s/crops/u003.png").exists());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

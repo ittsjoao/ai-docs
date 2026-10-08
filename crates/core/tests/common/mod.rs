@@ -98,6 +98,18 @@ impl SessionStore for FakeStore {
     fn manual(&self, id: &str) -> Result<Option<Manual>> {
         Ok(self.get(id).manual)
     }
+    fn save_manual(&self, id: &str, manual: &Manual) -> Result<()> {
+        self.edit(id, |s| s.manual = Some(manual.clone()));
+        Ok(())
+    }
+    fn add_image(&self, id: &str, bytes: &[u8]) -> Result<String> {
+        self.edit(id, |s| {
+            let n = s.files.keys().filter(|k| k.starts_with("crops/u")).count() + 1;
+            let img = format!("u{n:03}");
+            s.files.insert(format!("crops/{img}.png"), bytes.to_vec());
+            Ok(img)
+        })
+    }
     fn save_rendered(&self, id: &str, rendered: &Rendered) -> Result<()> {
         self.edit(id, |s| -> Result<()> {
             for img in &rendered.images {

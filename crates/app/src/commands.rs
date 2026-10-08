@@ -1,5 +1,5 @@
 //! `#[tauri::command]` finos: cada um chama o `App` numa thread de bloqueio (spec 2026-10-05 §3).
-use screenmanual_app::{validar_id, ApiError, App, Deps, Detalhe, EstadoGravacao, Inicio};
+use screenmanual_app::{validar_id, ApiError, App, Deps, Detalhe, EstadoGravacao, ImagemUi, Inicio, PassoUi};
 use screenmanual_core::domain::TranscriptionModel;
 use screenmanual_core::ports::{AgentResult, Collection, DocNode, SessionStore};
 use screenmanual_core::queries::SessionSummary;
@@ -175,4 +175,36 @@ pub async fn sair(app: AppHandle, st: St<'_>) -> Result<(), ApiError> {
     bloq(&st, |a| a.encerrar()).await?;
     app.exit(0);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn passos(st: St<'_>, id: String) -> Result<Vec<PassoUi>, ApiError> {
+    bloq(&st, move |a| a.passos(&id)).await
+}
+
+#[tauri::command]
+pub async fn imagens(st: St<'_>, id: String) -> Result<Vec<ImagemUi>, ApiError> {
+    bloq(&st, move |a| a.imagens(&id)).await
+}
+
+/// Bytes crus: chegam à UI como ArrayBuffer (sem base64).
+#[tauri::command]
+pub async fn miniatura(st: St<'_>, id: String, imagem: String) -> Result<tauri::ipc::Response, ApiError> {
+    bloq(&st, move |a| a.miniatura(&id, &imagem)).await.map(tauri::ipc::Response::new)
+}
+
+#[tauri::command]
+pub async fn definir_imagem(st: St<'_>, id: String, passo: usize, imagem: Option<String>) -> Result<(), ApiError> {
+    bloq(&st, move |a| a.definir_imagem(&id, passo, imagem.as_deref())).await
+}
+
+// ponytail: bytes vão como array JSON; um print de ~1 MB é ok, troque por ipc::Request se 20 MB pesar
+#[tauri::command]
+pub async fn adicionar_imagem(st: St<'_>, id: String, bytes: Vec<u8>) -> Result<String, ApiError> {
+    bloq(&st, move |a| a.adicionar_imagem(&id, &bytes)).await
+}
+
+#[tauri::command]
+pub async fn republicar(st: St<'_>, id: String, sobrescrever: bool) -> Result<String, ApiError> {
+    bloq(&st, move |a| a.republicar(&id, sobrescrever)).await
 }

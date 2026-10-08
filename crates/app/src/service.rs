@@ -7,10 +7,10 @@ use std::time::Duration;
 
 use screenmanual_agent::LoginRequired;
 use screenmanual_core::commands::{
-    approve, generate_manual, improve_manual, process_session, start_recording, stop_recording,
-    CommandError,
+    add_operator_image, approve, generate_manual, image_path, improve_manual, process_session,
+    republish, set_step_image, start_recording, stop_recording, CommandError,
 };
-use screenmanual_core::domain::{Activity, TranscribeConfig, TranscriptionModel};
+use screenmanual_core::domain::{Activity, SessionStatus, TranscribeConfig, TranscriptionModel};
 use screenmanual_core::ports::{
     AgentResult, Collection, DocNode, Imaging, ManualAgent, Recorder, RecordingHandle, SessionStore,
     Transcriber, Validacao, Wiki,
@@ -70,6 +70,7 @@ pub enum Acao {
     Gerar,
     Melhorar,
     Aprovar,
+    Republicar,
 }
 
 /// (título, corpo) da notificação do Windows ao fim de uma ação.
@@ -209,6 +210,21 @@ pub struct Inicio {
     pub gerando: Option<String>,
     pub modelo_atual: TranscriptionModel,
     pub modelos: Vec<ModeloStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PassoUi {
+    pub secao: String,
+    pub n: usize,
+    pub texto: String,
+    pub imagem: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ImagemUi {
+    pub id: String,
+    /// "gravacao" | "operador"
+    pub origem: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -779,6 +795,81 @@ impl<D: Deps> App<D> {
             r.as_ref().ok().cloned().flatten(),
         );
         r.map(|_| ())
+    }
+
+    /// Só no rascunho ou no publicado, e sem nada rodando na sessão.
+    fn exigir_rascunho(&self, id: &str) -> Result<(), ApiError> {
+        validar_id(id)?;
+        match self.detalhe(id)?.resumo.status {
+            SessionStatus::Draft | SessionStatus::Published => Ok(()),
+            _ => Err(ApiError::new("estado_invalido", "a sessão não tem rascunho")),
+        }
+    }
+
+    pub fn passos(&self, id: &str) -> Result<Vec<PassoUi>, ApiError> {
+        validar_id(id)?;
+        let m = self
+            .deps
+            .store()
+            .manual(id)?
+            .ok_or_else(|| ApiError::new("estado_invalido", "a sessão não tem rascunho"))?;
+        let mut n = 0;
+        Ok(m.secoes
+            .iter()
+            .flat_map(|s| s.passos.iter().map(move |p| (s, p)))
+            .map(|(s, p)| {
+                n += 1;
+                PassoUi {
+                    secao: s.titulo.clone(),
+                    n,
+                    texto: p.texto.clone(),
+                    imagem: p.imagem.clone(),
+                }
+            })
+            .collect())
+    }
+
+    pub fn imagens(&self, id: &str) -> Result<Vec<ImagemUi>, ApiError> {
+        validar_id(id)?;
+        let store = self.deps.store();
+        let extras = store.manual(id)?.map(|m| m.extras).unwrap_or_default();
+        Ok(store
+            .candidates(id)?
+            .into_iter()
+            .filter(|c| c.crop.is_some())
+            .map(|c| ImagemUi { id: c.id, origem: "gravacao" })
+            .chain(extras.into_iter().map(|id| ImagemUi { id, origem: "operador" }))
+            .collect())
+    }
+
+    pub fn miniatura(&self, id: &str, imagem: &str) -> Result<Vec<u8>, ApiError> {
+        validar_id(id)?;
+        let store = self.deps.store();
+        Ok(store.read_file(id, &image_path(store, id, imagem)?)?)
+    }
+
+    pub fn definir_imagem(&self, id: &str, passo: usize, imagem: Option<&str>) -> Result<(), ApiError> {
+        self.exigir_rascunho(id)?;
+        Ok(set_step_image(self.deps.store(), id, passo, imagem)?)
+    }
+
+    pub fn adicionar_imagem(&self, id: &str, bytes: &[u8]) -> Result<String, ApiError> {
+        self.exigir_rascunho(id)?;
+        Ok(add_operator_image(self.deps.store(), id, bytes)?)
+    }
+
+    pub fn republicar(&self, id: &str, sobrescrever: bool) -> Result<String, ApiError> {
+        self.exigir_rascunho(id)?;
+        let (cfg, token) = self.credenciais()?;
+        self.ocupar(id, Activity::Processing)?;
+        let r = (|| -> Result<String, ApiError> {
+            let wiki = self.deps.wiki(&cfg.outline_url, &token)?;
+            Ok(republish(self.deps.store(), &wiki, id, sobrescrever)?
+                .url
+                .unwrap_or_default())
+        })();
+        self.liberar(id, Acao::Republicar, r.as_ref().err(), r.as_ref().ok().cloned());
+        r
     }
 
     pub fn cancelar(&self) {
