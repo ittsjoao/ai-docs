@@ -963,7 +963,7 @@ impl<D: Deps> App<D> {
             id,
             Acao::Republicar,
             r.as_ref().err(),
-            r.as_ref().ok().cloned(),
+            r.as_ref().ok().filter(|u| !u.is_empty()).cloned(),
         );
         r
     }

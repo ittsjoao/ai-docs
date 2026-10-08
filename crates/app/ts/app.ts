@@ -617,8 +617,11 @@ document.addEventListener("submit", async (ev) => {
       });
     case "config": {
       const c = st.config!;
-      c.colecao_padrao = s("colecao") || null;
-      c.documento_padrao = (c.colecao_padrao && s("pai")) || null;
+      const col = s("colecao") || null;
+      // árvore ainda carregando (ou que falhou) não mostra o pai salvo: sem trocar de coleção, ele fica
+      if (col !== c.colecao_padrao || (col && Array.isArray(st.arvores[col]) && st.arvores[col].length))
+        c.documento_padrao = (col && s("pai")) || null;
+      c.colecao_padrao = col;
       c.transcricao = { modelo: (s("modelo") || c.transcricao.modelo) as Modelo, vocabulario: v.has("vocabulario") };
       st.colConfig = null;
       return tentar(async () => {

@@ -2,8 +2,8 @@
 //! `ok` (padrão), `sleep`, `login`, `noresult`, `orphan` (deixa um neto vivo segurando o stdout)
 //! `okmentionslogin`, `perguntas` (pergunta na 1ª rodada; com `--resume` ou `respostas.json`
 //! publica), `resume_falha` (o `--resume` falha; do zero publica), `resume_stderr` (o
-//! `--resume` sai com 1 só com stderr; do zero publica) ou `pergunta_de_novo` (sempre
-//! grava `perguntas.json`). Grava os argumentos e o ambiente em `fake-args.json`.
+//! `--resume` sai com 1 só com stderr; do zero publica), `pergunta_de_novo` (sempre
+//! grava `perguntas.json`) ou `sempre_falha` (toda rodada termina com erro de API). Grava os argumentos e o ambiente em `fake-args.json`.
 // ponytail: binário de teste no pacote; o instalador (plano 06) só leva o screenmanual-cli
 use std::time::Duration;
 
@@ -89,6 +89,9 @@ fn main() {
                 r#"{{"type":"result","subtype":"success","is_error":false,"result":"Mais dúvidas.","session_id":"sess-2"}}"#
             );
         }
+        "sempre_falha" => println!(
+            r#"{{"type":"result","subtype":"success","is_error":true,"result":"API Error"}}"#
+        ),
         _ => ok_stream("Publicado."),
     }
 }

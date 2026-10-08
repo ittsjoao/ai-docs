@@ -546,47 +546,52 @@ impl ManualAgent for ClaudeAgent {
         if self.cancel.load(Ordering::Relaxed) {
             bail!("geração cancelada");
         }
-        let p: Perguntas = serde_json::from_slice(
-            &std::fs::read(dir.join(PERGUNTAS)).context("não há perguntas pendentes")?,
-        )
-        .context("perguntas.json inválido")?;
+        let bytes = std::fs::read(dir.join(PERGUNTAS)).context("não há perguntas pendentes")?;
+        let p: Perguntas = serde_json::from_slice(&bytes).context("perguntas.json inválido")?;
         let modo = p.modo.clone().unwrap_or_else(|| "gerar".into());
         let mode = if modo == "melhoria" {
             AgentMode::Melhoria
         } else {
             AgentMode::Gerar
         };
-        remover_result(dir)?;
-        std::fs::create_dir_all(dir.join("logs")).context("falha ao criar logs/")?;
-        // as perguntas já foram lidas; um perguntas.json depois disto é pergunta nova
-        std::fs::rename(
-            dir.join(PERGUNTAS),
-            dir.join("logs").join(format!("perguntas-{}.json", stamp())),
-        )
-        .context("falha ao arquivar perguntas.json")?;
-        if let Some(sid) = p.session_id.as_deref() {
+        let r = (|| {
+            remover_result(dir)?;
+            std::fs::create_dir_all(dir.join("logs")).context("falha ao criar logs/")?;
+            // as perguntas já foram lidas; um perguntas.json depois disto é pergunta nova
+            std::fs::rename(
+                dir.join(PERGUNTAS),
+                dir.join("logs").join(format!("perguntas-{}.json", stamp())),
+            )
+            .context("falha ao arquivar perguntas.json")?;
+            if let Some(sid) = p.session_id.as_deref() {
+                let e = self.exec(
+                    dir,
+                    claude_args(&prompt_continuar(&modo), Some(sid), &self.model),
+                    progress,
+                )?;
+                // `--resume` recusado: erro no result ou saída sem result (só stderr)
+                let falhou_resume = (e.is_error || e.text.is_none())
+                    && !dir.join("result.json").exists()
+                    && !dir.join(PERGUNTAS).exists()
+                    && !is_login_error(e.text.as_deref().unwrap_or(""))
+                    && !is_login_error(&e.stderr);
+                if !falhou_resume {
+                    return concluir(dir, &modo, e, false);
+                }
+            }
+            // sem sessão ou resume recusado: do zero, no mesmo modo; a skill lê respostas.json
             let e = self.exec(
                 dir,
-                claude_args(&prompt_continuar(&modo), Some(sid), &self.model),
+                claude_args(prompt_of(mode), None, &self.model),
                 progress,
             )?;
-            // `--resume` recusado: erro no result ou saída sem result (só stderr)
-            let falhou_resume = (e.is_error || e.text.is_none())
-                && !dir.join("result.json").exists()
-                && !dir.join(PERGUNTAS).exists()
-                && !is_login_error(e.text.as_deref().unwrap_or(""))
-                && !is_login_error(&e.stderr);
-            if !falhou_resume {
-                return concluir(dir, &modo, e, false);
-            }
+            concluir(dir, &modo, e, false)
+        })();
+        // falhou com as respostas ainda lá: as perguntas voltam e "Tentar de novo" responde de novo
+        if r.is_err() && !dir.join(PERGUNTAS).exists() && dir.join(RESPOSTAS).exists() {
+            let _ = std::fs::write(dir.join(PERGUNTAS), &bytes);
         }
-        // sem sessão ou resume recusado: do zero, no mesmo modo; a skill lê respostas.json
-        let e = self.exec(
-            dir,
-            claude_args(prompt_of(mode), None, &self.model),
-            progress,
-        )?;
-        concluir(dir, &modo, e, false)
+        r
     }
 }
 

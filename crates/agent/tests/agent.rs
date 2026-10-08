@@ -362,3 +362,38 @@ fn continuar_sem_sessao_roda_do_zero() {
     assert!(!args.contains(&"--resume".to_string()));
     assert_eq!(&args[..2], ["-p", "/gerar-manual gerar"]);
 }
+
+#[test]
+fn continuar_que_falha_devolve_as_perguntas_para_tentar_de_novo() {
+    let dir = session("sempre-falha", "sempre_falha");
+    let perguntas = r#"{"perguntas":[{"id":"q1","pergunta":"?","opcoes":["a","b"]}],"session_id":"sess-1","modo":"gerar"}"#;
+    std::fs::write(dir.join("perguntas.json"), perguntas).unwrap();
+    std::fs::write(dir.join("respostas.json"), r#"{"pular":true}"#).unwrap();
+    agent().continuar(&dir, &mut |_| {}).unwrap_err();
+    assert_eq!(
+        std::fs::read_to_string(dir.join("perguntas.json")).unwrap(),
+        perguntas
+    );
+    assert!(dir.join("respostas.json").exists());
+    std::fs::remove_file(dir.join("fake-args.json")).unwrap();
+    agent().continuar(&dir, &mut |_| {}).unwrap_err();
+    assert!(
+        !args_vistos(&dir).is_empty(),
+        "o 2º continuar roda o claude"
+    );
+}
+
+#[test]
+fn cancelar_antes_do_continuar_mantem_as_perguntas() {
+    let a = agent();
+    a.cancel.store(true, Ordering::Relaxed);
+    let dir = session("cancel-cont", "ok");
+    std::fs::write(
+        dir.join("perguntas.json"),
+        r#"{"perguntas":[],"modo":"gerar"}"#,
+    )
+    .unwrap();
+    let e = a.continuar(&dir, &mut |_| {}).unwrap_err();
+    assert!(e.to_string().contains("cancelada"), "{e}");
+    assert!(dir.join("perguntas.json").exists());
+}
