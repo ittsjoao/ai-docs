@@ -34,6 +34,7 @@ Você está na **pasta de uma sessão** do screenManual. O operador gravou um pr
     "descartados":[{"id":"c007","motivo":"clique acidental, desfeito com Esc"}]}
    ```
    - `icone` é **um emoji** que represente o assunto do manual (ex.: 🖨️ impressora, 🌐 rede, 🧾 nota fiscal). Na melhoria, mantenha o atual, a não ser que o pedido seja trocar.
+   - `extras` lista imagens que o operador escolheu no app (ids como `u001`, arquivo em `crops/u001.png`). Esses ids são imagens válidas em `imagem`. **Preserve** `extras` e as imagens dos passos que você não foi pedido para mudar.
    - `imagem` é o id de um candidato **com** `crop`, ou `null`.
    - **Imagem só quando necessário:** use quando ela ajuda a achar o elemento (menu, aba, botão no meio de outros) ou a conferir o resultado. Passos óbvios pelo texto, como pressionar **Enter**, clicar em **OK** ou **Apply** logo após o passo anterior, ou digitar num campo que a imagem anterior já mostra, ficam com `"imagem": null`. Tirar a imagem **não** é motivo para juntar passos: cada passo continua com uma ação só ("Clique em **IP**." e "Clique em **DHCP Server**." são dois passos).
    - Todo candidato relevante entra em algum passo ou em `descartados`, com o motivo.
@@ -53,7 +54,7 @@ Você está na **pasta de uma sessão** do screenManual. O operador gravou um pr
 ## Modo `melhoria`
 
 1. Leia o `steps.json` atual e o `feedback.jsonl`. A **última linha** é o pedido atual; as anteriores são só histórico.
-2. Aplique **só** o que foi pedido, sem reescrever o resto.
+2. Aplique **só** o que foi pedido, sem reescrever o resto. O operador pode ter trocado imagens no app: mantenha `imagem` e `extras` como estão no `steps.json`, a não ser que o pedido diga o contrário.
 3. Siga os passos 4 a 6 do modo `gerar`.
 
 ## Regras de redação

@@ -58,27 +58,26 @@ pub fn render(
             }
             md += &format!("**Passo {n}.** {}\n\n", passo.texto.trim());
             if let Some(img) = &passo.imagem {
-                let cand =
-                    by_id
-                        .get(img.as_str())
-                        .ok_or_else(|| RenderError::UnknownCandidate {
+                let from = if manual.extras.iter().any(|e| e == img) {
+                    format!("crops/{img}.png")
+                } else {
+                    let cand = by_id.get(img.as_str()).ok_or_else(|| {
+                        RenderError::UnknownCandidate {
                             passo: n,
                             id: img.clone(),
-                        })?;
-                let crop = cand
-                    .crop
-                    .as_ref()
-                    .ok_or_else(|| RenderError::ImageWithoutCrop {
-                        passo: n,
-                        id: img.clone(),
+                        }
                     })?;
+                    cand.crop
+                        .clone()
+                        .ok_or_else(|| RenderError::ImageWithoutCrop {
+                            passo: n,
+                            id: img.clone(),
+                        })?
+                };
                 let to = format!("img/{img}.png");
                 md += &format!("![Passo {n}]({to})\n\n");
                 if !images.iter().any(|i| i.to == to) {
-                    images.push(ImageCopy {
-                        from: crop.clone(),
-                        to,
-                    });
+                    images.push(ImageCopy { from, to });
                 }
             }
             if let Some(aviso) = passo
@@ -210,5 +209,32 @@ mod tests {
         let mut m = manual(passo(None));
         m.schema_version = 2;
         assert_eq!(render(&m, &cands, "s1"), Err(RenderError::SchemaVersion(2)));
+    }
+
+    #[test]
+    fn imagem_do_operador_vem_de_crops() {
+        let mut m = manual(passo(Some("u001")));
+        m.extras = vec!["u001".into()];
+        let r = render(&m, &[cand("c001", None)], "s1").unwrap();
+        assert!(r.markdown.contains("![Passo 1](img/u001.png)"), "{}", r.markdown);
+        assert_eq!(
+            r.images,
+            vec![ImageCopy {
+                from: "crops/u001.png".into(),
+                to: "img/u001.png".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn id_de_operador_fora_de_extras_e_desconhecido() {
+        let r = render(&manual(passo(Some("u001"))), &[cand("c001", None)], "s1");
+        assert_eq!(
+            r,
+            Err(RenderError::UnknownCandidate {
+                passo: 1,
+                id: "u001".into()
+            })
+        );
     }
 }
