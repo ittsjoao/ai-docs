@@ -612,19 +612,6 @@ impl<D: Deps> App<D> {
         Ok(cancel)
     }
 
-    /// `instrucoes.txt` (spec §3): grava o texto, ou apaga o arquivo se vazio.
-    fn gravar_instrucao(&self, id: &str, instrucao: &str) -> Result<(), ApiError> {
-        let path = self.deps.store().dir(id).join("instrucoes.txt");
-        let r = match instrucao.trim() {
-            "" => match std::fs::remove_file(&path) {
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                r => r,
-            },
-            t => std::fs::write(&path, t),
-        };
-        r.map_err(|e| ApiError::new("outro", format!("falha ao gravar {}: {e}", path.display())))
-    }
-
     /// "Sobrescrever" no diálogo do D9: a revisão remota passa a ser a última conhecida.
     fn aceitar_revisao_remota(
         &self,
@@ -653,7 +640,6 @@ impl<D: Deps> App<D> {
         &self,
         id: &str,
         colecao: &str,
-        instrucao: &str,
         sobrescrever: bool,
     ) -> Result<AgentResult, ApiError> {
         validar_id(id)?;
@@ -666,7 +652,6 @@ impl<D: Deps> App<D> {
         }
         let cancel = self.ocupar_geracao(id)?;
         let r = (|| -> Result<AgentResult, ApiError> {
-            self.gravar_instrucao(id, instrucao)?;
             if sobrescrever {
                 self.aceitar_revisao_remota(&cfg, &token, id)?;
             }
@@ -689,14 +674,12 @@ impl<D: Deps> App<D> {
         &self,
         id: &str,
         texto: &str,
-        instrucao: &str,
         sobrescrever: bool,
     ) -> Result<AgentResult, ApiError> {
         validar_id(id)?;
         let (cfg, token) = self.credenciais()?;
         let cancel = self.ocupar_geracao(id)?;
         let r = (|| -> Result<AgentResult, ApiError> {
-            self.gravar_instrucao(id, instrucao)?;
             let wiki = self.deps.wiki(&cfg.outline_url, &token)?;
             let agent = self.deps.agent(&cfg, &token, cancel)?;
             Ok(improve_manual(

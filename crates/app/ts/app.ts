@@ -289,14 +289,12 @@ function formGerar(travado: string): string {
   const padrao = st.det?.colecao ?? st.config?.colecao_padrao ?? null;
   return `<form data-form="gerar">
     <label>Coleção do Outline <select name="colecao" required>${opcoesColecao(padrao)}</select></label>
-    <label>Instrução extra (opcional) <textarea name="instrucao" rows="2" placeholder="ex.: chame o sistema de ERP Protheus"></textarea></label>
     <button ${travado}>Gerar manual</button></form>`;
 }
 
 function formMelhoria(travado: string): string {
   return `<form data-form="melhoria">
     <label>O que melhorar <textarea name="texto" rows="3" required placeholder="ex.: junte os passos 3 e 4"></textarea></label>
-    <label>Instrução extra (opcional) <textarea name="instrucao" rows="2"></textarea></label>
     <button ${travado}>Enviar melhoria</button></form>`;
 }
 
@@ -388,15 +386,13 @@ document.addEventListener("submit", async (ev) => {
     }
     case "gerar": {
       const colecao = s("colecao");
-      const instrucao = s("instrucao");
-      return travar(f, () => executar(id, (sobrescrever) => invoke("gerar", { id, colecao, instrucao, sobrescrever })));
+      return travar(f, () => executar(id, (sobrescrever) => invoke("gerar", { id, colecao, sobrescrever })));
     }
     case "melhoria": {
       if (st.det?.status === "published" &&
         !(await perguntar("Este manual já está publicado. A melhoria altera o documento publicado. Continuar?"))) return;
       const texto = s("texto");
-      const instrucao = s("instrucao");
-      await travar(f, () => executar(id, (sobrescrever) => invoke("melhorar", { id, texto, instrucao, sobrescrever })));
+      await travar(f, () => executar(id, (sobrescrever) => invoke("melhorar", { id, texto, sobrescrever })));
       if (!st.aviso && st.det?.id === id) limparForm("melhoria");
       return;
     }

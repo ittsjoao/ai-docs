@@ -221,17 +221,14 @@ fn processar_sessao_gravando_e_ocupado() {
 }
 
 #[test]
-fn gera_com_instrucao_e_mostra_os_avisos() {
+fn gera_e_mostra_os_avisos() {
     let (app, rx) = app("gerar");
     let id = pronta(&app, "Emitir NFS-e");
-    let dir = app.deps().store.dir(&id);
-    let r = app
-        .gerar(&id, "col", "  use o termo NFS-e ", false)
-        .unwrap();
+    let r = app.gerar(&id, "col", false).unwrap();
     assert_eq!(r.url, "http://wiki/doc/manual");
-    assert_eq!(
-        std::fs::read_to_string(dir.join("instrucoes.txt")).unwrap(),
-        "use o termo NFS-e"
+    assert!(
+        !app.deps().store.dir(&id).join("instrucoes.txt").exists(),
+        "a instrução extra não existe mais"
     );
     let d = app.detalhe(&id).unwrap();
     assert_eq!(d.resumo.status, SessionStatus::Draft);
@@ -249,12 +246,6 @@ fn gera_com_instrucao_e_mostra_os_avisos() {
             ..
         }
     )));
-
-    app.gerar(&id, "col", "", false).unwrap();
-    assert!(
-        !dir.join("instrucoes.txt").exists(),
-        "instrução vazia apaga o arquivo"
-    );
 }
 
 #[test]
@@ -265,7 +256,7 @@ fn uma_geracao_por_vez_e_cancelar() {
     eventos(&rx);
     *app.deps().plano.lock().unwrap() = Plano::EsperaCancelar;
     let (app2, a2) = (app.clone(), a.clone());
-    let t = std::thread::spawn(move || app2.gerar(&a2, "col", "", false));
+    let t = std::thread::spawn(move || app2.gerar(&a2, "col", false));
     loop {
         if let Evento::Progresso { texto, .. } = rx
             .recv_timeout(Duration::from_secs(5))
@@ -279,13 +270,10 @@ fn uma_geracao_por_vez_e_cancelar() {
     assert_eq!(status(&app, &a), SessionStatus::Generating);
     assert_eq!(app.inicio().unwrap().gerando.as_deref(), Some(a.as_str()));
     assert!(app.ocupado());
-    let e = app.gerar(&b, "col", "", false).unwrap_err();
+    let e = app.gerar(&b, "col", false).unwrap_err();
     assert_eq!(e.kind, "ocupado");
     assert!(e.mensagem.contains("Primeira"), "{}", e.mensagem);
-    assert_eq!(
-        app.melhorar(&b, "x", "", false).unwrap_err().kind,
-        "ocupado"
-    );
+    assert_eq!(app.melhorar(&b, "x", false).unwrap_err().kind, "ocupado");
     assert_eq!(app.processar(&a, false).unwrap_err().kind, "ocupado");
 
     app.cancelar();
@@ -300,16 +288,16 @@ fn uma_geracao_por_vez_e_cancelar() {
 fn melhoria_sobre_edicao_manual_pede_confirmacao() {
     let (app, _rx) = app("d9");
     let id = pronta(&app, "Manual");
-    app.gerar(&id, "col", "", false).unwrap();
+    app.gerar(&id, "col", false).unwrap();
     app.deps().remota.store(2, Ordering::SeqCst);
-    let e = app.melhorar(&id, "troque o título", "", false).unwrap_err();
+    let e = app.melhorar(&id, "troque o título", false).unwrap_err();
     assert_eq!(
         (e.kind, e.local, e.remote),
         ("editado_manualmente", Some(1), Some(2))
     );
     let feedback = app.deps().store.dir(&id).join("feedback.jsonl");
     assert!(!feedback.exists());
-    app.melhorar(&id, "troque o título", "", true).unwrap();
+    app.melhorar(&id, "troque o título", true).unwrap();
     assert_eq!(
         std::fs::read_to_string(&feedback).unwrap().lines().count(),
         1
@@ -320,14 +308,14 @@ fn melhoria_sobre_edicao_manual_pede_confirmacao() {
 fn gerar_sobrescrevendo_aceita_a_revisao_remota() {
     let (app, _rx) = app("sobrescrever");
     let id = pronta(&app, "Manual");
-    app.gerar(&id, "col", "", false).unwrap();
+    app.gerar(&id, "col", false).unwrap();
     app.deps().remota.store(3, Ordering::SeqCst);
     *app.deps().plano.lock().unwrap() = Plano::Editado;
-    let r = app.gerar(&id, "col", "", false).unwrap();
+    let r = app.gerar(&id, "col", false).unwrap();
     assert_eq!(r.validacao[0].tipo, "editado_manualmente");
     assert_eq!(*app.deps().revisao_vista.lock().unwrap(), Some(1));
     *app.deps().plano.lock().unwrap() = Plano::Ok;
-    app.gerar(&id, "col", "", true).unwrap();
+    app.gerar(&id, "col", true).unwrap();
     assert_eq!(*app.deps().revisao_vista.lock().unwrap(), Some(3));
 }
 
@@ -336,14 +324,14 @@ fn login_colecao_e_credenciais() {
     let (app, _rx) = app("login");
     let id = pronta(&app, "Manual");
     *app.deps().plano.lock().unwrap() = Plano::Login;
-    assert_eq!(app.gerar(&id, "col", "", false).unwrap_err().kind, "login");
+    assert_eq!(app.gerar(&id, "col", false).unwrap_err().kind, "login");
     assert_eq!(
-        app.gerar(&id, " ", "", false).unwrap_err().kind,
+        app.gerar(&id, " ", false).unwrap_err().kind,
         "estado_invalido"
     );
     *app.deps().token.lock().unwrap() = None;
     assert_eq!(
-        app.gerar(&id, "col", "", false).unwrap_err().kind,
+        app.gerar(&id, "col", false).unwrap_err().kind,
         "estado_invalido"
     );
 }
@@ -353,7 +341,7 @@ fn aprovar_publica_o_rascunho() {
     let (app, _rx) = app("aprovar");
     let id = pronta(&app, "Manual");
     assert_eq!(app.aprovar(&id).unwrap_err().kind, "estado_invalido");
-    app.gerar(&id, "col", "", false).unwrap();
+    app.gerar(&id, "col", false).unwrap();
     app.aprovar(&id).unwrap();
     assert_eq!(status(&app, &id), SessionStatus::Published);
 }
@@ -372,7 +360,7 @@ fn encerrar_para_a_gravacao_sem_processar() {
 fn aprovar_reserva_a_sessao_e_nao_emite_fim() {
     let (app, rx) = app("aprovar-reserva");
     let id = pronta(&app, "Manual");
-    app.gerar(&id, "col", "", false).unwrap();
+    app.gerar(&id, "col", false).unwrap();
     eventos(&rx);
     app.aprovar(&id).unwrap();
     let ev = eventos(&rx);
@@ -403,12 +391,11 @@ fn aprovar_sessao_ocupada_nao_toca_no_error_txt() {
 fn id_invalido_e_recusado() {
     let (app, _rx) = app("id-invalido");
     let fora = format!("..{}x", char::from(92u8));
-    let e = app.gerar(&fora, "col", "texto", false).unwrap_err();
+    let e = app.gerar(&fora, "col", false).unwrap_err();
     assert_eq!(
         (e.kind, e.mensagem.as_str()),
         ("estado_invalido", "sessão inválida")
     );
-    assert!(!app.deps().store.dir(&fora).join("instrucoes.txt").exists());
     assert_eq!(app.detalhe("C:").unwrap_err().kind, "estado_invalido");
     assert_eq!(app.detalhe("a/b").unwrap_err().kind, "estado_invalido");
     assert_eq!(app.detalhe("").unwrap_err().kind, "estado_invalido");
@@ -417,7 +404,7 @@ fn id_invalido_e_recusado() {
         "estado_invalido"
     );
     assert_eq!(
-        app.melhorar("..", "x", "", false).unwrap_err().kind,
+        app.melhorar("..", "x", false).unwrap_err().kind,
         "estado_invalido"
     );
     assert_eq!(app.aprovar("..").unwrap_err().kind, "estado_invalido");

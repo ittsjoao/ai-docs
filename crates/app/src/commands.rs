@@ -101,13 +101,9 @@ pub async fn gerar(
     st: St<'_>,
     id: String,
     colecao: String,
-    instrucao: String,
     sobrescrever: bool,
 ) -> Result<AgentResult, ApiError> {
-    bloq(&st, move |a| {
-        a.gerar(&id, &colecao, &instrucao, sobrescrever)
-    })
-    .await
+    bloq(&st, move |a| a.gerar(&id, &colecao, sobrescrever)).await
 }
 
 #[tauri::command]
@@ -115,13 +111,9 @@ pub async fn melhorar(
     st: St<'_>,
     id: String,
     texto: String,
-    instrucao: String,
     sobrescrever: bool,
 ) -> Result<AgentResult, ApiError> {
-    bloq(&st, move |a| {
-        a.melhorar(&id, &texto, &instrucao, sobrescrever)
-    })
-    .await
+    bloq(&st, move |a| a.melhorar(&id, &texto, sobrescrever)).await
 }
 
 #[tauri::command]
