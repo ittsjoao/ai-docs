@@ -11,6 +11,7 @@ pub enum SessionStatus {
     Processing,
     Ready,
     Generating,
+    Awaiting,
     Draft,
     Published,
     Error,
@@ -31,6 +32,8 @@ pub struct SessionFacts {
     pub has_candidates: bool,
     pub publish: Option<PublishState>,
     pub error: Option<String>,
+    /// perguntas.json presente e respostas.json ausente.
+    pub perguntas_pendentes: bool,
 }
 
 pub fn derive_status(f: &SessionFacts, activity: Option<Activity>) -> SessionStatus {
@@ -42,6 +45,9 @@ pub fn derive_status(f: &SessionFacts, activity: Option<Activity>) -> SessionSta
     }
     if f.error.is_some() {
         return SessionStatus::Error;
+    }
+    if f.perguntas_pendentes {
+        return SessionStatus::Awaiting;
     }
     if let Some(p) = f.publish.as_ref().filter(|p| p.outline_id.is_some()) {
         return if p.status == Some(PublishStatus::Published) {
@@ -111,5 +117,24 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(derive_status(&f, None), SessionStatus::Error);
+    }
+
+    #[test]
+    fn aguardando_vence_rascunho_e_perde_para_atividade_e_erro() {
+        let f = SessionFacts {
+            has_candidates: true,
+            perguntas_pendentes: true,
+            ..Default::default()
+        };
+        assert_eq!(derive_status(&f, None), SessionStatus::Awaiting);
+        assert_eq!(
+            derive_status(&f, Some(Activity::Generating)),
+            SessionStatus::Generating
+        );
+        let erro = SessionFacts {
+            error: Some("x".into()),
+            ..f
+        };
+        assert_eq!(derive_status(&erro, None), SessionStatus::Error);
     }
 }

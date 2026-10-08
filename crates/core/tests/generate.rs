@@ -50,7 +50,7 @@ fn generate_saves_collection_and_runs_agent() {
         seen.push(m.to_string())
     })
     .unwrap();
-    assert_eq!(res.revision, 2);
+    assert!(matches!(res, AgentOutcome::Pronto(r) if r.revision == 2));
     assert_eq!(*agent.modes.lock().unwrap(), vec![AgentMode::Gerar]);
     assert_eq!(store.get("s1").publish.unwrap().collection_id, "col-9");
     assert_eq!(seen, vec!["trabalhando"]);
@@ -150,4 +150,40 @@ fn gerar_grava_o_pai_no_publish_json() {
             .as_deref(),
         Some("pai-1")
     );
+}
+
+#[test]
+fn responder_grava_as_respostas_e_continua() {
+    let store = ready();
+    store.edit_sess("s1", |s| s.perguntas = Some(perguntas()));
+    let agent = FakeAgent::asking();
+    let r: Respostas =
+        serde_json::from_str(r#"{"respostas":[{"id":"q1","escolhas":["ERP"]}]}"#).unwrap();
+    let out = answer_questions(&store, &agent, "s1", &r, &mut |_| {}).unwrap();
+    assert!(matches!(out, AgentOutcome::Pronto(_)));
+    assert_eq!(store.get("s1").respostas, Some(r));
+}
+
+#[test]
+fn responder_incompleto_ou_sem_perguntas_e_recusado() {
+    let store = ready();
+    let agent = FakeAgent::asking();
+    let vazia = Respostas::default();
+    assert!(matches!(
+        answer_questions(&store, &agent, "s1", &vazia, &mut |_| {}),
+        Err(CommandError::InvalidState(_))
+    ));
+    store.edit_sess("s1", |s| s.perguntas = Some(perguntas()));
+    let err = answer_questions(&store, &agent, "s1", &vazia, &mut |_| {}).unwrap_err();
+    assert!(err.to_string().contains("Qual sistema?"), "{err}");
+    assert_eq!(store.get("s1").respostas, None);
+}
+
+#[test]
+fn cancelar_perguntas_volta_a_pronta() {
+    let store = ready();
+    store.edit_sess("s1", |s| s.perguntas = Some(perguntas()));
+    assert!(store.facts("s1").unwrap().perguntas_pendentes);
+    cancel_questions(&store, "s1").unwrap();
+    assert!(!store.facts("s1").unwrap().perguntas_pendentes);
 }

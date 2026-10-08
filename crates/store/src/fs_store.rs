@@ -5,7 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Context, Result};
 use screenmanual_core::domain::{
-    Candidate, Event, Manual, PublishState, Rendered, Segment, SessionFacts, SessionMeta,
+    Candidate, Event, Manual, Perguntas, PublishState, Rendered, Respostas, Segment, SessionFacts,
+    SessionMeta,
 };
 use screenmanual_core::ports::SessionStore;
 use serde::de::DeserializeOwned;
@@ -22,6 +23,8 @@ const PUBLISHED: &str = "published";
 const PUBLISH: &str = "publish.json";
 const FEEDBACK: &str = "feedback.jsonl";
 const ERROR: &str = "error.txt";
+const PERGUNTAS: &str = "perguntas.json";
+const RESPOSTAS: &str = "respostas.json";
 /// Um WAV só com cabeçalho não tem áudio.
 const WAV_HEADER: u64 = 44;
 
@@ -314,6 +317,21 @@ impl SessionStore for FsStore {
         Ok(())
     }
 
+    fn perguntas(&self, id: &str) -> Result<Option<Perguntas>> {
+        read_json(&self.file(id, PERGUNTAS))
+    }
+
+    fn save_respostas(&self, id: &str, respostas: &Respostas) -> Result<()> {
+        write_json(&self.file(id, RESPOSTAS), respostas)
+    }
+
+    fn clear_perguntas(&self, id: &str) -> Result<()> {
+        for f in [PERGUNTAS, RESPOSTAS] {
+            remove_if_exists(&self.file(id, f), |p| fs::remove_file(p))?;
+        }
+        Ok(())
+    }
+
     fn facts(&self, id: &str) -> Result<SessionFacts> {
         Ok(SessionFacts {
             ended: self
@@ -324,6 +342,8 @@ impl SessionStore for FsStore {
             publish: self.publish_state(id)?,
             error: read_bytes(&self.file(id, ERROR))?
                 .map(|b| String::from_utf8_lossy(&b).into_owned()),
+            perguntas_pendentes: self.file(id, PERGUNTAS).is_file()
+                && !self.file(id, RESPOSTAS).is_file(),
         })
     }
 
@@ -455,6 +475,12 @@ mod tests {
         store.set_error("s", Some("falhou")).unwrap();
         let f = store.facts("s").unwrap();
         assert!(f.ended && f.has_candidates);
+        fs::write(root.join("s/perguntas.json"), "{}").unwrap();
+        assert!(store.facts("s").unwrap().perguntas_pendentes);
+        fs::write(root.join("s/respostas.json"), "{}").unwrap();
+        assert!(!store.facts("s").unwrap().perguntas_pendentes);
+        store.clear_perguntas("s").unwrap();
+        assert!(!root.join("s/perguntas.json").exists());
         assert_eq!(f.error.as_deref(), Some("falhou"));
         store.set_error("s", None).unwrap();
         store.set_error("s", None).unwrap(); // limpar duas vezes não falha

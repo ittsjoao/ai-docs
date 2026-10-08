@@ -24,6 +24,8 @@ pub struct Sess {
     pub publish: Option<PublishState>,
     pub feedback: Vec<String>,
     pub error: Option<String>,
+    pub perguntas: Option<Perguntas>,
+    pub respostas: Option<Respostas>,
 }
 
 #[derive(Default)]
@@ -39,6 +41,9 @@ impl FakeStore {
     }
     pub fn get(&self, id: &str) -> Sess {
         self.s.lock().unwrap().get(id).cloned().unwrap_or_default()
+    }
+    pub fn edit_sess(&self, id: &str, f: impl FnOnce(&mut Sess)) {
+        self.edit(id, f)
     }
     fn edit<T>(&self, id: &str, f: impl FnOnce(&mut Sess) -> T) -> T {
         f(self.s.lock().unwrap().entry(id.to_string()).or_default())
@@ -148,6 +153,20 @@ impl SessionStore for FakeStore {
         self.edit(id, |s| s.feedback.push(text.to_string()));
         Ok(())
     }
+    fn perguntas(&self, id: &str) -> Result<Option<Perguntas>> {
+        Ok(self.get(id).perguntas)
+    }
+    fn save_respostas(&self, id: &str, r: &Respostas) -> Result<()> {
+        self.edit(id, |s| s.respostas = Some(r.clone()));
+        Ok(())
+    }
+    fn clear_perguntas(&self, id: &str) -> Result<()> {
+        self.edit(id, |s| {
+            s.perguntas = None;
+            s.respostas = None;
+        });
+        Ok(())
+    }
     fn facts(&self, id: &str) -> Result<SessionFacts> {
         let s = self.get(id);
         Ok(SessionFacts {
@@ -158,6 +177,7 @@ impl SessionStore for FakeStore {
             has_candidates: s.candidates.is_some(),
             publish: s.publish,
             error: s.error,
+            perguntas_pendentes: s.perguntas.is_some() && s.respostas.is_none(),
         })
     }
     fn set_error(&self, id: &str, message: Option<&str>) -> Result<()> {
@@ -222,25 +242,44 @@ impl Imaging for FakeImaging {
 }
 
 pub struct FakeAgent {
-    pub result: Result<AgentResult, String>,
+    pub result: Result<AgentOutcome, String>,
+    /// resultado do `continuar`
+    pub continued: Result<AgentOutcome, String>,
     pub modes: Mutex<Vec<AgentMode>>,
+}
+
+pub fn pronto() -> AgentOutcome {
+    AgentOutcome::Pronto(AgentResult {
+        url: "https://wiki/doc/doc-1".into(),
+        revision: 2,
+        rodadas: 1,
+        validacao: vec![],
+    })
+}
+
+pub fn perguntas() -> Perguntas {
+    serde_json::from_str(r#"{"perguntas":[{"id":"q1","pergunta":"Qual sistema?","opcoes":["ERP","CRM"]}],"session_id":"sess-1","modo":"gerar"}"#).unwrap()
 }
 
 impl FakeAgent {
     pub fn ok() -> Self {
         Self {
-            result: Ok(AgentResult {
-                url: "https://wiki/doc/doc-1".into(),
-                revision: 2,
-                rodadas: 1,
-                validacao: vec![],
-            }),
+            result: Ok(pronto()),
+            continued: Ok(pronto()),
             modes: Mutex::default(),
         }
     }
     pub fn failing(msg: &str) -> Self {
         Self {
             result: Err(msg.to_string()),
+            continued: Err(msg.to_string()),
+            modes: Mutex::default(),
+        }
+    }
+    pub fn asking() -> Self {
+        Self {
+            result: Ok(AgentOutcome::Perguntas(perguntas())),
+            continued: Ok(pronto()),
             modes: Mutex::default(),
         }
     }
@@ -252,10 +291,14 @@ impl ManualAgent for FakeAgent {
         _dir: &Path,
         mode: AgentMode,
         progress: &mut dyn FnMut(&str),
-    ) -> Result<AgentResult> {
+    ) -> Result<AgentOutcome> {
         progress("trabalhando");
         self.modes.lock().unwrap().push(mode);
         self.result.clone().map_err(|e| anyhow!(e))
+    }
+    fn continuar(&self, _dir: &Path, progress: &mut dyn FnMut(&str)) -> Result<AgentOutcome> {
+        progress("continuando");
+        self.continued.clone().map_err(|e| anyhow!(e))
     }
 }
 

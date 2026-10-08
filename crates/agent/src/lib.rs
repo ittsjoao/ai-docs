@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Context, Result};
-use screenmanual_core::ports::{AgentMode, AgentResult, ManualAgent, PortResult};
+use screenmanual_core::ports::{AgentMode, AgentOutcome, ManualAgent, PortResult};
 use serde_json::Value;
 
 /// Skill embutida; `install_skill` a grava em `~/.claude/skills/gerar-manual/` (spec §8).
@@ -269,12 +269,16 @@ fn strip_verbatim(p: &Path) -> PathBuf {
 }
 
 impl ManualAgent for ClaudeAgent {
+    fn continuar(&self, _dir: &Path, _progress: &mut dyn FnMut(&str)) -> PortResult<AgentOutcome> {
+        bail!("continuar ainda não existe no ClaudeAgent (Task 8)")
+    }
+
     fn run(
         &self,
         dir: &Path,
         mode: AgentMode,
         progress: &mut dyn FnMut(&str),
-    ) -> PortResult<AgentResult> {
+    ) -> PortResult<AgentOutcome> {
         let dir = long_dir(dir);
         let dir = dir.as_path();
         if self.cancel.load(Ordering::Relaxed) {
@@ -425,7 +429,9 @@ impl ManualAgent for ClaudeAgent {
             }
             Err(e) => return Err(e).context("falha ao ler o result.json"),
         };
-        serde_json::from_slice(&bytes).context("result.json inválido")
+        serde_json::from_slice(&bytes)
+            .map(AgentOutcome::Pronto)
+            .context("result.json inválido")
     }
 }
 

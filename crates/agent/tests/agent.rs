@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use screenmanual_agent::{check_claude, ClaudeAgent, LoginRequired};
-use screenmanual_core::ports::{AgentMode, AgentResult, ManualAgent};
+use screenmanual_core::ports::{AgentMode, AgentOutcome, AgentResult, ManualAgent};
 
 const FAKE: &str = env!("CARGO_BIN_EXE_fake_claude");
 const STALE: &str = r#"{"url":"velho","revision":1,"rodadas":0}"#;
@@ -29,11 +29,18 @@ fn agent() -> ClaudeAgent {
     )
 }
 
+fn pronto(o: anyhow::Result<AgentOutcome>) -> AgentResult {
+    let AgentOutcome::Pronto(r) = o.unwrap() else {
+        panic!("esperava Pronto")
+    };
+    r
+}
+
 fn run(
     agent: &ClaudeAgent,
     dir: &Path,
     mode: AgentMode,
-) -> (anyhow::Result<AgentResult>, Vec<String>) {
+) -> (anyhow::Result<AgentOutcome>, Vec<String>) {
     let mut seen = vec![];
     let result = agent.run(dir, mode, &mut |p| seen.push(p.to_string()));
     (result, seen)
@@ -44,7 +51,7 @@ fn gerar_runs_claude_in_the_session_and_reads_result_json() {
     let dir = session("ok", "ok");
     std::fs::write(dir.join("result.json"), STALE).unwrap();
     let (result, seen) = run(&agent(), &dir, AgentMode::Gerar);
-    let result = result.unwrap();
+    let result = pronto(result);
     assert_eq!(result.url, "https://wiki.x/doc/a");
     assert_eq!(result.revision, 2);
     assert_eq!(
@@ -174,9 +181,7 @@ fn cancel_kills_claude() {
 #[test]
 fn orphan_holding_stdout_does_not_hang_a_finished_run() {
     let started = Instant::now();
-    let result = run(&agent(), &session("orphan", "orphan"), AgentMode::Gerar)
-        .0
-        .unwrap();
+    let result = pronto(run(&agent(), &session("orphan", "orphan"), AgentMode::Gerar).0);
     assert_eq!(result.url, "https://wiki.x/doc/a");
     assert!(started.elapsed() < Duration::from_secs(10));
 }
@@ -184,7 +189,7 @@ fn orphan_holding_stdout_does_not_hang_a_finished_run() {
 #[test]
 fn success_text_mentioning_login_is_not_a_login_error() {
     let dir = session("okmentionslogin", "okmentionslogin");
-    let result = run(&agent(), &dir, AgentMode::Gerar).0.unwrap();
+    let result = pronto(run(&agent(), &dir, AgentMode::Gerar).0);
     assert_eq!(result.revision, 2);
 }
 

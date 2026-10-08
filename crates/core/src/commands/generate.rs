@@ -1,7 +1,7 @@
 use super::error::finish;
 use super::{CommandError, CommandResult};
-use crate::domain::PublishState;
-use crate::ports::{AgentMode, AgentResult, ManualAgent, SessionStore, Wiki};
+use crate::domain::{PublishState, Respostas};
+use crate::ports::{AgentMode, AgentOutcome, ManualAgent, SessionStore, Wiki};
 
 pub fn generate_manual<S: SessionStore, A: ManualAgent>(
     store: &S,
@@ -10,13 +10,13 @@ pub fn generate_manual<S: SessionStore, A: ManualAgent>(
     collection_id: &str,
     parent: Option<&str>,
     progress: &mut dyn FnMut(&str),
-) -> CommandResult<AgentResult> {
+) -> CommandResult<AgentOutcome> {
     if !store.facts(id)?.has_candidates {
         return Err(CommandError::InvalidState(
             "processe a gravação antes de gerar o manual",
         ));
     }
-    let result = (|| -> CommandResult<AgentResult> {
+    let result = (|| -> CommandResult<AgentOutcome> {
         let mut state = store
             .publish_state(id)?
             .unwrap_or_else(|| PublishState::new(collection_id));
@@ -36,7 +36,7 @@ pub fn improve_manual<S: SessionStore, W: Wiki, A: ManualAgent>(
     text: &str,
     overwrite: bool,
     progress: &mut dyn FnMut(&str),
-) -> CommandResult<AgentResult> {
+) -> CommandResult<AgentOutcome> {
     let text = text.trim();
     if text.is_empty() {
         return Err(CommandError::InvalidState("descreva a melhoria desejada"));
@@ -63,4 +63,28 @@ pub fn improve_manual<S: SessionStore, W: Wiki, A: ManualAgent>(
         .run(&store.dir(id), AgentMode::Melhoria, progress)
         .map_err(CommandError::from);
     finish(store, id, result)
+}
+
+pub fn answer_questions<S: SessionStore, A: ManualAgent>(
+    store: &S,
+    agent: &A,
+    id: &str,
+    respostas: &Respostas,
+    progress: &mut dyn FnMut(&str),
+) -> CommandResult<AgentOutcome> {
+    let perguntas = store
+        .perguntas(id)?
+        .ok_or(CommandError::InvalidState("não há perguntas pendentes"))?;
+    respostas
+        .validar(&perguntas)
+        .map_err(|e| CommandError::Unknown(anyhow::anyhow!(e)))?;
+    store.save_respostas(id, respostas)?;
+    let result = agent
+        .continuar(&store.dir(id), progress)
+        .map_err(CommandError::from);
+    finish(store, id, result)
+}
+
+pub fn cancel_questions<S: SessionStore>(store: &S, id: &str) -> CommandResult<()> {
+    Ok(store.clear_perguntas(id)?)
 }

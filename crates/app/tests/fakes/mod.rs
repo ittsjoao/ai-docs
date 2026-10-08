@@ -247,7 +247,7 @@ impl ManualAgent for FakeAgent {
         dir: &Path,
         _mode: AgentMode,
         progress: &mut dyn FnMut(&str),
-    ) -> PortResult<AgentResult> {
+    ) -> PortResult<AgentOutcome> {
         progress("lendo");
         let publish = dir.join("publish.json");
         let mut p: serde_json::Value = serde_json::from_slice(&std::fs::read(&publish)?)?;
@@ -283,6 +283,10 @@ impl ManualAgent for FakeAgent {
             "url": "http://wiki/doc/manual", "revision": revision, "rodadas": 1, "validacao": validacao
         });
         std::fs::write(dir.join("result.json"), serde_json::to_vec(&result)?)?;
-        Ok(serde_json::from_value(result)?)
+        Ok(AgentOutcome::Pronto(serde_json::from_value(result)?))
+    }
+
+    fn continuar(&self, dir: &Path, progress: &mut dyn FnMut(&str)) -> PortResult<AgentOutcome> {
+        self.run(dir, AgentMode::Gerar, progress)
     }
 }

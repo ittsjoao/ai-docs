@@ -1,7 +1,9 @@
 //! `#[tauri::command]` finos: cada um chama o `App` numa thread de bloqueio (spec 2026-10-05 §3).
-use screenmanual_app::{validar_id, ApiError, App, Deps, Detalhe, EstadoGravacao, ImagemUi, Inicio, PassoUi};
+use screenmanual_app::{
+    validar_id, ApiError, App, Deps, Detalhe, EstadoGravacao, ImagemUi, Inicio, PassoUi,
+};
 use screenmanual_core::domain::TranscriptionModel;
-use screenmanual_core::ports::{AgentResult, Collection, DocNode, SessionStore};
+use screenmanual_core::ports::{AgentOutcome, Collection, DocNode, SessionStore};
 use screenmanual_core::queries::SessionSummary;
 use screenmanual_settings::AppConfig;
 use tauri::{AppHandle, State};
@@ -108,8 +110,11 @@ pub async fn gerar(
     colecao: String,
     pai: Option<String>,
     sobrescrever: bool,
-) -> Result<AgentResult, ApiError> {
-    bloq(&st, move |a| a.gerar(&id, &colecao, pai.as_deref(), sobrescrever)).await
+) -> Result<AgentOutcome, ApiError> {
+    bloq(&st, move |a| {
+        a.gerar(&id, &colecao, pai.as_deref(), sobrescrever)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -118,7 +123,7 @@ pub async fn melhorar(
     id: String,
     texto: String,
     sobrescrever: bool,
-) -> Result<AgentResult, ApiError> {
+) -> Result<AgentOutcome, ApiError> {
     bloq(&st, move |a| a.melhorar(&id, &texto, sobrescrever)).await
 }
 
@@ -189,13 +194,27 @@ pub async fn imagens(st: St<'_>, id: String) -> Result<Vec<ImagemUi>, ApiError> 
 
 /// Bytes crus: chegam à UI como ArrayBuffer (sem base64).
 #[tauri::command]
-pub async fn miniatura(st: St<'_>, id: String, imagem: String) -> Result<tauri::ipc::Response, ApiError> {
-    bloq(&st, move |a| a.miniatura(&id, &imagem)).await.map(tauri::ipc::Response::new)
+pub async fn miniatura(
+    st: St<'_>,
+    id: String,
+    imagem: String,
+) -> Result<tauri::ipc::Response, ApiError> {
+    bloq(&st, move |a| a.miniatura(&id, &imagem))
+        .await
+        .map(tauri::ipc::Response::new)
 }
 
 #[tauri::command]
-pub async fn definir_imagem(st: St<'_>, id: String, passo: usize, imagem: Option<String>) -> Result<(), ApiError> {
-    bloq(&st, move |a| a.definir_imagem(&id, passo, imagem.as_deref())).await
+pub async fn definir_imagem(
+    st: St<'_>,
+    id: String,
+    passo: usize,
+    imagem: Option<String>,
+) -> Result<(), ApiError> {
+    bloq(&st, move |a| {
+        a.definir_imagem(&id, passo, imagem.as_deref())
+    })
+    .await
 }
 
 // ponytail: bytes vão como array JSON; um print de ~1 MB é ok, troque por ipc::Request se 20 MB pesar

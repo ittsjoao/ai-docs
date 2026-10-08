@@ -10,7 +10,7 @@ use fakes::*;
 use screenmanual_app::*;
 use screenmanual_core::commands::CommandError;
 use screenmanual_core::domain::{SessionStatus, TranscriptionModel};
-use screenmanual_core::ports::SessionStore;
+use screenmanual_core::ports::{AgentOutcome, SessionStore};
 use screenmanual_settings::AppConfig;
 
 const QUANDO: &str = "2026-10-05T14:30:00-03:00";
@@ -225,7 +225,7 @@ fn gera_e_mostra_os_avisos() {
     let (app, rx) = app("gerar");
     let id = pronta(&app, "Emitir NFS-e");
     let r = app.gerar(&id, "col", None, false).unwrap();
-    assert_eq!(r.url, "http://wiki/doc/manual");
+    assert_eq!(r.url().unwrap(), "http://wiki/doc/manual");
     assert!(
         !app.deps().store.dir(&id).join("instrucoes.txt").exists(),
         "a instrução extra não existe mais"
@@ -313,6 +313,9 @@ fn gerar_sobrescrevendo_aceita_a_revisao_remota() {
     app.deps().remota.store(3, Ordering::SeqCst);
     *app.deps().plano.lock().unwrap() = Plano::Editado;
     let r = app.gerar(&id, "col", None, false).unwrap();
+    let AgentOutcome::Pronto(r) = r else {
+        panic!("esperava Pronto")
+    };
     assert_eq!(r.validacao[0].tipo, "editado_manualmente");
     assert_eq!(*app.deps().revisao_vista.lock().unwrap(), Some(1));
     *app.deps().plano.lock().unwrap() = Plano::Ok;
@@ -325,7 +328,10 @@ fn login_colecao_e_credenciais() {
     let (app, _rx) = app("login");
     let id = pronta(&app, "Manual");
     *app.deps().plano.lock().unwrap() = Plano::Login;
-    assert_eq!(app.gerar(&id, "col", None, false).unwrap_err().kind, "login");
+    assert_eq!(
+        app.gerar(&id, "col", None, false).unwrap_err().kind,
+        "login"
+    );
     assert_eq!(
         app.gerar(&id, " ", None, false).unwrap_err().kind,
         "estado_invalido"
@@ -520,9 +526,16 @@ fn pai_que_sumiu_do_outline_e_recusado() {
     let e = app.gerar(&id, "col", Some("apagado"), false).unwrap_err();
     assert_eq!(
         (e.kind, e.mensagem.as_str()),
-        ("estado_invalido", "o documento escolhido não existe mais no Outline")
+        (
+            "estado_invalido",
+            "o documento escolhido não existe mais no Outline"
+        )
     );
-    assert_eq!(status(&app, &id), SessionStatus::Ready, "não reservou a sessão");
+    assert_eq!(
+        status(&app, &id),
+        SessionStatus::Ready,
+        "não reservou a sessão"
+    );
 }
 
 /// PNG 1×1 válido.
@@ -543,11 +556,26 @@ fn imagem_colada_entra_no_passo_e_republica() {
     assert_eq!(img, "u001");
     app.definir_imagem(&id, 1, Some(&img)).unwrap();
     assert_eq!(app.passos(&id).unwrap()[0].imagem.as_deref(), Some("u001"));
-    assert!(app.imagens(&id).unwrap().iter().any(|i| i.id == "u001" && i.origem == "operador"));
-    assert_eq!(app.miniatura(&id, "u001").unwrap(), std::fs::read(app.deps().store.dir(&id).join("crops/u001.png")).unwrap());
+    assert!(app
+        .imagens(&id)
+        .unwrap()
+        .iter()
+        .any(|i| i.id == "u001" && i.origem == "operador"));
+    assert_eq!(
+        app.miniatura(&id, "u001").unwrap(),
+        std::fs::read(app.deps().store.dir(&id).join("crops/u001.png")).unwrap()
+    );
     eventos(&rx);
     app.republicar(&id, false).unwrap();
-    assert!(eventos(&rx).iter().any(|e| matches!(e, Evento::Fim { acao: Acao::Republicar, url: Some(_), erro: None, .. })));
+    assert!(eventos(&rx).iter().any(|e| matches!(
+        e,
+        Evento::Fim {
+            acao: Acao::Republicar,
+            url: Some(_),
+            erro: None,
+            ..
+        }
+    )));
 }
 
 #[test]
@@ -556,8 +584,18 @@ fn imagem_invalida_e_miniatura_estranha_sao_recusadas() {
     let id = pronta(&app, "Manual");
     app.gerar(&id, "col", None, false).unwrap();
     let e = app.adicionar_imagem(&id, b"texto copiado").unwrap_err();
-    assert!(e.mensagem.contains("não é uma imagem PNG ou JPEG"), "{}", e.mensagem);
+    assert!(
+        e.mensagem.contains("não é uma imagem PNG ou JPEG"),
+        "{}",
+        e.mensagem
+    );
     assert!(app.passos(&id).unwrap()[0].imagem.is_none());
-    assert_eq!(app.miniatura(&id, "../session").unwrap_err().kind, "estado_invalido");
-    assert_eq!(app.miniatura(&id, "u009").unwrap_err().kind, "estado_invalido");
+    assert_eq!(
+        app.miniatura(&id, "../session").unwrap_err().kind,
+        "estado_invalido"
+    );
+    assert_eq!(
+        app.miniatura(&id, "u009").unwrap_err().kind,
+        "estado_invalido"
+    );
 }

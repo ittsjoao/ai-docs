@@ -12,8 +12,8 @@ use screenmanual_core::commands::{
 };
 use screenmanual_core::domain::{Activity, SessionStatus, TranscribeConfig, TranscriptionModel};
 use screenmanual_core::ports::{
-    AgentResult, Collection, DocNode, Imaging, ManualAgent, Recorder, RecordingHandle, SessionStore,
-    Transcriber, Validacao, Wiki,
+    AgentOutcome, AgentResult, Collection, DocNode, Imaging, ManualAgent, Recorder,
+    RecordingHandle, SessionStore, Transcriber, Validacao, Wiki,
 };
 use screenmanual_core::queries::{get_session, list_sessions, SessionSummary};
 use screenmanual_settings::AppConfig;
@@ -436,7 +436,10 @@ impl<D: Deps> App<D> {
 
     pub fn documentos(&self, colecao: &str) -> Result<Vec<DocNode>, ApiError> {
         let (cfg, token) = self.credenciais()?;
-        Ok(self.deps.wiki(&cfg.outline_url, &token)?.documents(colecao)?)
+        Ok(self
+            .deps
+            .wiki(&cfg.outline_url, &token)?
+            .documents(colecao)?)
     }
 
     fn garantir_modelo(
@@ -704,7 +707,7 @@ impl<D: Deps> App<D> {
         colecao: &str,
         pai: Option<&str>,
         sobrescrever: bool,
-    ) -> Result<AgentResult, ApiError> {
+    ) -> Result<AgentOutcome, ApiError> {
         validar_id(id)?;
         let (cfg, token) = self.credenciais()?;
         if colecao.trim().is_empty() {
@@ -723,7 +726,7 @@ impl<D: Deps> App<D> {
             }
         }
         let cancel = self.ocupar_geracao(id)?;
-        let r = (|| -> Result<AgentResult, ApiError> {
+        let r = (|| -> Result<AgentOutcome, ApiError> {
             if sobrescrever {
                 self.aceitar_revisao_remota(&cfg, &token, id)?;
             }
@@ -741,7 +744,7 @@ impl<D: Deps> App<D> {
             id,
             Acao::Gerar,
             r.as_ref().err(),
-            r.as_ref().ok().map(|x| x.url.clone()),
+            r.as_ref().ok().and_then(|x| x.url().map(str::to_string)),
         );
         r
     }
@@ -753,11 +756,11 @@ impl<D: Deps> App<D> {
         id: &str,
         texto: &str,
         sobrescrever: bool,
-    ) -> Result<AgentResult, ApiError> {
+    ) -> Result<AgentOutcome, ApiError> {
         validar_id(id)?;
         let (cfg, token) = self.credenciais()?;
         let cancel = self.ocupar_geracao(id)?;
-        let r = (|| -> Result<AgentResult, ApiError> {
+        let r = (|| -> Result<AgentOutcome, ApiError> {
             let wiki = self.deps.wiki(&cfg.outline_url, &token)?;
             let agent = self.deps.agent(&cfg, &token, cancel)?;
             Ok(improve_manual(
@@ -774,7 +777,7 @@ impl<D: Deps> App<D> {
             id,
             Acao::Melhorar,
             r.as_ref().err(),
-            r.as_ref().ok().map(|x| x.url.clone()),
+            r.as_ref().ok().and_then(|x| x.url().map(str::to_string)),
         );
         r
     }
@@ -802,7 +805,10 @@ impl<D: Deps> App<D> {
         validar_id(id)?;
         match self.detalhe(id)?.resumo.status {
             SessionStatus::Draft | SessionStatus::Published => Ok(()),
-            _ => Err(ApiError::new("estado_invalido", "a sessão não tem rascunho")),
+            _ => Err(ApiError::new(
+                "estado_invalido",
+                "a sessão não tem rascunho",
+            )),
         }
     }
 
@@ -837,8 +843,14 @@ impl<D: Deps> App<D> {
             .candidates(id)?
             .into_iter()
             .filter(|c| c.crop.is_some())
-            .map(|c| ImagemUi { id: c.id, origem: "gravacao" })
-            .chain(extras.into_iter().map(|id| ImagemUi { id, origem: "operador" }))
+            .map(|c| ImagemUi {
+                id: c.id,
+                origem: "gravacao",
+            })
+            .chain(extras.into_iter().map(|id| ImagemUi {
+                id,
+                origem: "operador",
+            }))
             .collect())
     }
 
@@ -848,7 +860,12 @@ impl<D: Deps> App<D> {
         Ok(store.read_file(id, &image_path(store, id, imagem)?)?)
     }
 
-    pub fn definir_imagem(&self, id: &str, passo: usize, imagem: Option<&str>) -> Result<(), ApiError> {
+    pub fn definir_imagem(
+        &self,
+        id: &str,
+        passo: usize,
+        imagem: Option<&str>,
+    ) -> Result<(), ApiError> {
         self.exigir_rascunho(id)?;
         Ok(set_step_image(self.deps.store(), id, passo, imagem)?)
     }
@@ -868,7 +885,12 @@ impl<D: Deps> App<D> {
                 .url
                 .unwrap_or_default())
         })();
-        self.liberar(id, Acao::Republicar, r.as_ref().err(), r.as_ref().ok().cloned());
+        self.liberar(
+            id,
+            Acao::Republicar,
+            r.as_ref().err(),
+            r.as_ref().ok().cloned(),
+        );
         r
     }
 

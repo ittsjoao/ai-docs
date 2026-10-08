@@ -6,7 +6,7 @@ interface TauriGlobal {
 }
 declare const __TAURI__: TauriGlobal;
 
-type Status = "recording" | "interrupted" | "stopped" | "processing" | "ready" | "generating" | "draft" | "published" | "error";
+type Status = "recording" | "interrupted" | "stopped" | "processing" | "ready" | "generating" | "awaiting" | "draft" | "published" | "error";
 type Modelo = "rapido" | "equilibrado" | "preciso";
 type Gravacao = "gravando" | "pausado" | "parado";
 
@@ -24,7 +24,7 @@ interface Colecao { id: string; name: string; }
 interface DocNode { id: string; title: string; children: DocNode[]; }
 interface Config { outline_url: string; colecao_padrao: string | null; documento_padrao: string | null; transcricao: { modelo: Modelo; vocabulario: boolean }; [k: string]: unknown; }
 interface ApiError { kind: string; mensagem: string; local?: number; remote?: number; }
-interface AgentResult { url: string; validacao?: Validacao[]; }
+interface AgentResult { tipo: "pronto" | "perguntas"; url?: string; validacao?: Validacao[]; }
 type Evento =
   | { evento: "sessao"; id: string }
   | { evento: "progresso"; id: string; texto: string }
@@ -39,7 +39,7 @@ const invoke = __TAURI__.core.invoke;
 
 const STATUS: Record<Status, string> = {
   recording: "gravando", interrupted: "interrompida", stopped: "parada", processing: "processando…",
-  ready: "pronta", generating: "gerando…", draft: "rascunho", published: "publicado", error: "erro",
+  ready: "pronta", generating: "gerando…", awaiting: "aguardando respostas", draft: "rascunho", published: "publicado", error: "erro",
 };
 const MODELOS: [Modelo, string][] = [
   ["rapido", "Rápido — ~1 min de processamento por minuto de fala"],
@@ -281,6 +281,7 @@ function htmlAcoes(d: Detalhe): string {
   switch (d.status) {
     case "recording": return `<p>Gravando… use ⏸ / ■ no topo ou na bandeja. Ctrl+Alt+P pausa/retoma; Ctrl+Alt+M marca um passo.</p>`;
     case "processing": return prog;
+    case "awaiting": return "";
     case "generating": return prog + `<button data-acao="cancelar" class="sec">Cancelar</button>`;
     case "interrupted":
     case "stopped": return `<p>Gravação ainda não processada.</p><button data-acao="processar">Processar</button>`;

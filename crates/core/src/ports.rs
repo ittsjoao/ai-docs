@@ -37,10 +37,14 @@ pub trait SessionStore {
     fn save_publish_state(&self, id: &str, state: &PublishState) -> PortResult<()>;
     /// Acrescenta uma linha {t, texto} a feedback.jsonl (o adapter carimba a hora).
     fn append_feedback(&self, id: &str, text: &str) -> PortResult<()>;
+    fn perguntas(&self, id: &str) -> PortResult<Option<Perguntas>>;
+    fn save_respostas(&self, id: &str, respostas: &Respostas) -> PortResult<()>;
+    /// Apaga perguntas.json e respostas.json.
+    fn clear_perguntas(&self, id: &str) -> PortResult<()>;
     /// Contrato que o adapter de disco (plano 03) deve reproduzir:
     /// `ended` = events.jsonl contém um evento `session_end`; `has_candidates` = candidates.json existe;
     /// `publish` = conteúdo de publish.json; `error` = mensagem gravada por `set_error`
-    /// (persistida na pasta da sessão, ex.: `error.txt`) e limpa com `set_error(None)`.
+    /// (persistida na pasta da sessão, ex.: `error.txt`) e limpa com `set_error(None)`; `perguntas_pendentes` = perguntas.json existe e respostas.json não.
     fn facts(&self, id: &str) -> PortResult<SessionFacts>;
     fn set_error(&self, id: &str, message: Option<&str>) -> PortResult<()>;
 }
@@ -76,13 +80,32 @@ pub struct AgentResult {
     pub validacao: Vec<Validacao>,
 }
 
+/// O que uma execução do agente devolve: o manual publicado ou dúvidas para o operador.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "tipo", rename_all = "lowercase")]
+pub enum AgentOutcome {
+    Pronto(AgentResult),
+    Perguntas(Perguntas),
+}
+
+impl AgentOutcome {
+    pub fn url(&self) -> Option<&str> {
+        match self {
+            Self::Pronto(r) => Some(&r.url),
+            Self::Perguntas(_) => None,
+        }
+    }
+}
+
 pub trait ManualAgent {
     fn run(
         &self,
         dir: &Path,
         mode: AgentMode,
         progress: &mut dyn FnMut(&str),
-    ) -> PortResult<AgentResult>;
+    ) -> PortResult<AgentOutcome>;
+    /// Continua depois que o operador respondeu (`respostas.json` já gravado).
+    fn continuar(&self, dir: &Path, progress: &mut dyn FnMut(&str)) -> PortResult<AgentOutcome>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
