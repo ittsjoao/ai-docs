@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Context, Result};
+use screenmanual_core::domain::Perguntas;
 use screenmanual_core::ports::{AgentMode, AgentOutcome, ManualAgent, PortResult};
 use serde_json::Value;
 
@@ -17,11 +18,12 @@ pub const SKILL: &str = include_str!("../../../skill/gerar-manual/SKILL.md");
 
 /// Ferramentas liberadas (spec §7.2). `Write(...)` não libera escrita: a regra de arquivo é
 /// `Edit` (validação de 2026-10-04).
-const ALLOWED_TOOLS: [&str; 12] = [
+const ALLOWED_TOOLS: [&str; 13] = [
     "Read(./**)",
     "Glob",
     "Edit(./steps.json)",
     "Edit(./result.json)",
+    "Edit(./perguntas.json)",
     "PowerShell(screenmanual-cli render:*)",
     "PowerShell(screenmanual-cli publish:*)",
     "PowerShell(screenmanual-cli fetch:*)",
@@ -75,23 +77,40 @@ pub fn check_claude(claude: &Path) -> Result<String> {
     }
 }
 
-pub fn claude_args(mode: AgentMode, model: &str) -> Vec<String> {
-    let prompt = match mode {
+pub fn prompt_of(mode: AgentMode) -> &'static str {
+    match mode {
         AgentMode::Gerar => "/gerar-manual gerar",
         AgentMode::Melhoria => "/gerar-manual melhoria",
-    };
-    let mut a: Vec<String> = [
-        "-p",
-        prompt,
-        "--output-format",
-        "stream-json",
-        "--verbose",
-        "--max-turns",
-        "100",
-        "--strict-mcp-config",
-    ]
-    .map(String::from)
-    .to_vec();
+    }
+}
+
+fn modo_nome(mode: AgentMode) -> &'static str {
+    match mode {
+        AgentMode::Gerar => "gerar",
+        AgentMode::Melhoria => "melhoria",
+    }
+}
+
+fn prompt_continuar(modo: &str) -> String {
+    format!("As respostas do operador estão em respostas.json. Continue o modo {modo} do /gerar-manual a partir do passo 3.")
+}
+
+pub fn claude_args(prompt: &str, resume: Option<&str>, model: &str) -> Vec<String> {
+    let mut a: Vec<String> = vec!["-p".into(), prompt.into()];
+    if let Some(s) = resume {
+        a.extend(["--resume".to_string(), s.to_string()]);
+    }
+    a.extend(
+        [
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--max-turns",
+            "100",
+            "--strict-mcp-config",
+        ]
+        .map(String::from),
+    );
     if !model.is_empty() {
         a.extend(["--model".to_string(), model.to_string()]);
     }
@@ -111,6 +130,8 @@ pub enum StreamEvent {
         subtype: String,
         text: String,
     },
+    /// `session_id` do `system`/`init` ou do `result`, para o `--resume`.
+    Session(String),
 }
 
 /// Uma linha do `--output-format stream-json`; linhas desconhecidas são ignoradas.
@@ -118,7 +139,7 @@ pub fn parse_line(line: &str) -> Vec<StreamEvent> {
     let Ok(v) = serde_json::from_str::<Value>(line) else {
         return vec![];
     };
-    match v["type"].as_str() {
+    let mut out: Vec<StreamEvent> = match v["type"].as_str() {
         Some("assistant") => v["message"]["content"]
             .as_array()
             .into_iter()
@@ -133,7 +154,13 @@ pub fn parse_line(line: &str) -> Vec<StreamEvent> {
             text: v["result"].as_str().unwrap_or("").to_string(),
         }],
         _ => vec![],
+    };
+    if matches!(v["type"].as_str(), Some("system" | "result")) {
+        if let Some(s) = v["session_id"].as_str() {
+            out.push(StreamEvent::Session(s.to_string()));
+        }
     }
+    out
 }
 
 fn describe(tool: &str, input: &Value) -> Option<String> {
@@ -151,6 +178,7 @@ fn describe(tool: &str, input: &Value) -> Option<String> {
         "Write" | "Edit" => file.map(|f| match f {
             "steps.json" => "escrevendo o manual".to_string(),
             "result.json" => "registrando o resultado".to_string(),
+            "perguntas.json" => "preparando perguntas para você".to_string(),
             _ => format!("editando {f}"),
         }),
         "Bash" | "PowerShell" => {
@@ -268,38 +296,22 @@ fn strip_verbatim(p: &Path) -> PathBuf {
     }
 }
 
-impl ManualAgent for ClaudeAgent {
-    fn continuar(&self, _dir: &Path, _progress: &mut dyn FnMut(&str)) -> PortResult<AgentOutcome> {
-        bail!("continuar ainda não existe no ClaudeAgent (Task 8)")
-    }
+/// O que sobrou de uma execução do `claude`.
+struct Exec {
+    is_error: bool,
+    subtype: String,
+    text: Option<String>,
+    stderr: String,
+    status: String,
+    session: Option<String>,
+}
 
-    fn run(
-        &self,
-        dir: &Path,
-        mode: AgentMode,
-        progress: &mut dyn FnMut(&str),
-    ) -> PortResult<AgentOutcome> {
-        let dir = long_dir(dir);
-        let dir = dir.as_path();
-        if self.cancel.load(Ordering::Relaxed) {
-            bail!("geração cancelada");
-        }
-        let result_path = dir.join("result.json");
-        match std::fs::remove_file(&result_path) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                return Err(e).context("falha ao apagar o result.json anterior");
-            }
-            _ => {}
-        }
-        let logs = dir.join("logs");
-        std::fs::create_dir_all(&logs)
-            .with_context(|| format!("falha ao criar {}", logs.display()))?;
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
-        let mut log = std::fs::File::create(logs.join(format!("claude-{stamp}.jsonl")))
-            .context("falha ao criar o log do Claude")?;
+impl ClaudeAgent {
+    /// Spawn + leitura do stream + timeout/cancelar. `logs/` já deve existir.
+    fn exec(&self, dir: &Path, args: Vec<String>, progress: &mut dyn FnMut(&str)) -> Result<Exec> {
+        let mut log =
+            std::fs::File::create(dir.join("logs").join(format!("claude-{}.jsonl", stamp())))
+                .context("falha ao criar o log do Claude")?;
 
         let inherited = std::env::var_os("PATH").unwrap_or_default();
         let path = std::env::join_paths(
@@ -308,7 +320,7 @@ impl ManualAgent for ClaudeAgent {
         .context("PATH inválido")?;
         let mut child = no_window(
             Command::new(&self.claude)
-                .args(claude_args(mode, &self.model))
+                .args(&args)
                 .current_dir(dir)
                 .env("PATH", path)
                 .env("OUTLINE_URL", &self.outline_url)
@@ -349,6 +361,7 @@ impl ManualAgent for ClaudeAgent {
         let deadline = Instant::now() + self.timeout;
         let (mut done, mut last) = (None, String::new());
         let mut finished_at: Option<Instant> = None;
+        let mut session = None;
         loop {
             match rx.recv_timeout(Duration::from_millis(200)) {
                 Ok(line) => {
@@ -364,6 +377,7 @@ impl ManualAgent for ClaudeAgent {
                                 done = Some(d);
                                 finished_at.get_or_insert_with(Instant::now);
                             }
+                            StreamEvent::Session(s) => session = Some(s),
                         }
                     }
                 }
@@ -408,30 +422,168 @@ impl ManualAgent for ClaudeAgent {
             }) => (is_error, subtype, Some(text)),
             _ => (false, String::new(), None),
         };
-        if (is_error || text.is_none())
-            && (is_login_error(text.as_deref().unwrap_or("")) || is_login_error(&stderr))
-        {
-            return Err(LoginRequired.into());
+        Ok(Exec {
+            is_error,
+            subtype,
+            text,
+            stderr,
+            status,
+            session,
+        })
+    }
+}
+
+const PERGUNTAS: &str = "perguntas.json";
+const RESPOSTAS: &str = "respostas.json";
+
+fn stamp() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+/// Move perguntas.json/respostas.json para logs/ (histórico), se existirem.
+fn arquivar(dir: &Path) {
+    let s = stamp();
+    for (f, prefixo) in [(PERGUNTAS, "perguntas"), (RESPOSTAS, "respostas")] {
+        let from = dir.join(f);
+        if from.is_file() {
+            let _ = std::fs::rename(&from, dir.join("logs").join(format!("{prefixo}-{s}.json")));
         }
-        let Some(text) = text else {
-            bail!(
-                "o Claude Code saiu ({status}) sem resultado: {}",
-                tail(&stderr)
-            );
+    }
+}
+
+fn remover_result(dir: &Path) -> Result<()> {
+    match std::fs::remove_file(dir.join("result.json")) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            Err(e).context("falha ao apagar o result.json anterior")
+        }
+        _ => Ok(()),
+    }
+}
+
+/// result.json → Pronto; perguntas.json novo → Perguntas (com sessão e modo); senão, erro.
+fn concluir(dir: &Path, modo: &str, e: Exec, pode_perguntar: bool) -> Result<AgentOutcome> {
+    if (e.is_error || e.text.is_none())
+        && (is_login_error(e.text.as_deref().unwrap_or("")) || is_login_error(&e.stderr))
+    {
+        return Err(LoginRequired.into());
+    }
+    let Some(text) = e.text else {
+        bail!(
+            "o Claude Code saiu ({}) sem resultado: {}",
+            e.status,
+            tail(&e.stderr)
+        );
+    };
+    if e.is_error || text.trim().is_empty() {
+        bail!("o Claude Code parou ({}): {text}", e.subtype);
+    }
+    match std::fs::read(dir.join("result.json")) {
+        Ok(b) => {
+            arquivar(dir);
+            return serde_json::from_slice(&b)
+                .map(AgentOutcome::Pronto)
+                .context("result.json inválido");
+        }
+        Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
+            return Err(err).context("falha ao ler o result.json");
+        }
+        Err(_) => {}
+    }
+    let Ok(b) = std::fs::read(dir.join(PERGUNTAS)) else {
+        bail!("a skill terminou sem gravar result.json: {text}");
+    };
+    if !pode_perguntar {
+        arquivar(dir);
+        bail!("a IA fez novas perguntas depois das respostas; gere de novo");
+    }
+    let mut p: Perguntas = match serde_json::from_slice(&b) {
+        Ok(p) => p,
+        Err(_) => {
+            arquivar(dir);
+            bail!("a IA escreveu perguntas inválidas");
+        }
+    };
+    if let Err(motivo) = p.validar() {
+        arquivar(dir);
+        bail!("a IA escreveu perguntas inválidas: {motivo}");
+    }
+    p.session_id = e.session;
+    p.modo = Some(modo.to_string());
+    std::fs::write(dir.join(PERGUNTAS), serde_json::to_vec_pretty(&p)?)
+        .context("falha ao gravar perguntas.json")?;
+    Ok(AgentOutcome::Perguntas(p))
+}
+
+impl ManualAgent for ClaudeAgent {
+    fn run(
+        &self,
+        dir: &Path,
+        mode: AgentMode,
+        progress: &mut dyn FnMut(&str),
+    ) -> PortResult<AgentOutcome> {
+        let dir = long_dir(dir);
+        let dir = dir.as_path();
+        if self.cancel.load(Ordering::Relaxed) {
+            bail!("geração cancelada");
+        }
+        remover_result(dir)?;
+        std::fs::create_dir_all(dir.join("logs")).context("falha ao criar logs/")?;
+        arquivar(dir); // perguntas de uma rodada anterior não valem para esta
+        let e = self.exec(
+            dir,
+            claude_args(prompt_of(mode), None, &self.model),
+            progress,
+        )?;
+        concluir(dir, modo_nome(mode), e, true)
+    }
+
+    fn continuar(&self, dir: &Path, progress: &mut dyn FnMut(&str)) -> PortResult<AgentOutcome> {
+        let dir = long_dir(dir);
+        let dir = dir.as_path();
+        if self.cancel.load(Ordering::Relaxed) {
+            bail!("geração cancelada");
+        }
+        let p: Perguntas = serde_json::from_slice(
+            &std::fs::read(dir.join(PERGUNTAS)).context("não há perguntas pendentes")?,
+        )
+        .context("perguntas.json inválido")?;
+        let modo = p.modo.clone().unwrap_or_else(|| "gerar".into());
+        let mode = if modo == "melhoria" {
+            AgentMode::Melhoria
+        } else {
+            AgentMode::Gerar
         };
-        if is_error || text.trim().is_empty() {
-            bail!("o Claude Code parou ({subtype}): {text}");
-        }
-        let bytes = match std::fs::read(&result_path) {
-            Ok(b) => b,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                bail!("a skill terminou sem gravar result.json: {text}");
+        remover_result(dir)?;
+        std::fs::create_dir_all(dir.join("logs")).context("falha ao criar logs/")?;
+        // as perguntas já foram lidas; um perguntas.json depois disto é pergunta nova
+        let _ = std::fs::rename(
+            dir.join(PERGUNTAS),
+            dir.join("logs").join(format!("perguntas-{}.json", stamp())),
+        );
+        if let Some(sid) = p.session_id.as_deref() {
+            let e = self.exec(
+                dir,
+                claude_args(&prompt_continuar(&modo), Some(sid), &self.model),
+                progress,
+            )?;
+            let falhou_resume = e.is_error
+                && !dir.join("result.json").exists()
+                && !dir.join(PERGUNTAS).exists()
+                && !is_login_error(e.text.as_deref().unwrap_or(""));
+            if !falhou_resume {
+                return concluir(dir, &modo, e, false);
             }
-            Err(e) => return Err(e).context("falha ao ler o result.json"),
-        };
-        serde_json::from_slice(&bytes)
-            .map(AgentOutcome::Pronto)
-            .context("result.json inválido")
+        }
+        // sem sessão ou resume recusado: do zero, no mesmo modo; a skill lê respostas.json
+        let e = self.exec(
+            dir,
+            claude_args(prompt_of(mode), None, &self.model),
+            progress,
+        )?;
+        concluir(dir, &modo, e, false)
     }
 }
 
@@ -488,7 +640,8 @@ mod tests {
 
     #[test]
     fn args_follow_the_spec() {
-        let a = claude_args(AgentMode::Gerar, "sonnet");
+        let a = claude_args(prompt_of(AgentMode::Gerar), None, "sonnet");
+        assert!(!a.contains(&"--resume".to_string()));
         assert_eq!(
             &a[..10],
             [
@@ -518,11 +671,27 @@ mod tests {
             &a[a.len() - 3..],
             ["--disallowedTools", "WebFetch", "WebSearch"]
         );
-        assert_eq!(a.len(), 10 + 1 + 12 + 3);
+        assert_eq!(a.len(), 10 + 1 + 13 + 3);
 
-        let m = claude_args(AgentMode::Melhoria, "");
+        let m = claude_args(prompt_of(AgentMode::Melhoria), None, "");
         assert_eq!(m[1], "/gerar-manual melhoria");
         assert!(!m.contains(&"--model".to_string()));
+    }
+
+    #[test]
+    fn resume_entra_logo_depois_do_prompt() {
+        let a = claude_args("continue", Some("sess-1"), "");
+        assert_eq!(&a[..4], ["-p", "continue", "--resume", "sess-1"]);
+    }
+
+    #[test]
+    fn session_id_vem_do_init_e_do_result() {
+        assert_eq!(
+            parse_line(r#"{"type":"system","subtype":"init","session_id":"s1"}"#),
+            vec![StreamEvent::Session("s1".into())]
+        );
+        assert!(parse_line(r#"{"type":"result","subtype":"success","is_error":false,"result":"x","session_id":"s2"}"#)
+            .contains(&StreamEvent::Session("s2".into())));
     }
 
     #[test]

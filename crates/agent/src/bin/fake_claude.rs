@@ -1,6 +1,8 @@
 //! `claude` falso para os testes do `ClaudeAgent`. O modo vem de `fake-mode.txt` na pasta atual:
 //! `ok` (padrão), `sleep`, `login`, `noresult`, `orphan` (deixa um neto vivo segurando o stdout)
-//! ou `okmentionslogin`. Grava os argumentos e o ambiente em `fake-args.json`.
+//! `okmentionslogin`, `perguntas` (pergunta na 1ª rodada; com `--resume` ou `respostas.json`
+//! publica), `resume_falha` (o `--resume` falha; do zero publica) ou `pergunta_de_novo` (sempre
+//! grava `perguntas.json`). Grava os argumentos e o ambiente em `fake-args.json`.
 // ponytail: binário de teste no pacote; o instalador (plano 06) só leva o screenmanual-cli
 use std::time::Duration;
 
@@ -44,12 +46,47 @@ fn main() {
             ok_stream("Publicado.");
         }
         "okmentionslogin" => ok_stream("use /login se precisar"),
+        "perguntas" => {
+            let resumido = args.iter().any(|a| a == "--resume");
+            if resumido || std::path::Path::new("respostas.json").exists() {
+                ok_stream("Publicado.");
+            } else {
+                println!(r#"{{"type":"system","subtype":"init","session_id":"sess-1"}}"#);
+                std::fs::write(
+                    "perguntas.json",
+                    r#"{"perguntas":[{"id":"q1","pergunta":"Qual sistema?","opcoes":["ERP","CRM"]}]}"#,
+                )
+                .unwrap();
+                println!(
+                    r#"{{"type":"result","subtype":"success","is_error":false,"result":"Aguardando respostas.","session_id":"sess-1"}}"#
+                );
+            }
+        }
+        "resume_falha" => {
+            if args.iter().any(|a| a == "--resume") {
+                println!(
+                    r#"{{"type":"result","subtype":"error_during_execution","is_error":true,"result":"No conversation found with session ID: sess-1"}}"#
+                );
+            } else {
+                ok_stream("Publicado.");
+            }
+        }
+        "pergunta_de_novo" => {
+            std::fs::write(
+                "perguntas.json",
+                r#"{"perguntas":[{"id":"q2","pergunta":"E agora?","opcoes":["a","b"]}]}"#,
+            )
+            .unwrap();
+            println!(
+                r#"{{"type":"result","subtype":"success","is_error":false,"result":"Mais dúvidas.","session_id":"sess-2"}}"#
+            );
+        }
         _ => ok_stream("Publicado."),
     }
 }
 
 fn ok_stream(text: &str) {
-    println!(r#"{{"type":"system","subtype":"init","cwd":"x"}}"#);
+    println!(r#"{{"type":"system","subtype":"init","cwd":"x","session_id":"sess-ok"}}"#);
     println!(
         r#"{{"type":"assistant","message":{{"content":[{{"type":"tool_use","name":"Read","input":{{"file_path":"C:\\s\\crops\\c001.png"}}}}]}}}}"#
     );

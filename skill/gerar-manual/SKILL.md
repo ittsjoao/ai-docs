@@ -9,7 +9,7 @@ Você está na **pasta de uma sessão** do screenManual. O operador gravou um pr
 
 ## Regras de ferramenta (obrigatórias)
 
-- Leia arquivos só desta pasta (`Read`, `Glob`). Escreva só `steps.json` e `result.json`.
+- Leia arquivos só desta pasta (`Read`, `Glob`). Escreva só `steps.json`, `result.json` e `perguntas.json`.
 - O shell só pode rodar estes comandos, **um por chamada**, sem `;`, `|`, `&&`, `2>&1` ou qualquer redirecionamento:
   - `screenmanual-cli render`
   - `screenmanual-cli publish`
@@ -21,6 +21,18 @@ Você está na **pasta de uma sessão** do screenManual. O operador gravou um pr
   - `2` = uso incorreto;
   - `3` = o documento foi editado à mão no Outline. **Pare**, não publique, e escreva `result.json` com `url` e `revision` lidos do `publish.json`, `rodadas` com as correções já feitas, e `validacao` com `{"tipo":"editado_manualmente","detalhe":"<mensagem do CLI>"}`.
 
+
+## Dúvidas do operador
+
+Nos dois modos, depois de ler o contexto e **antes** de escrever o `steps.json`:
+
+- Se existir `respostas.json`: leia-o. As respostas valem como instrução do operador e prevalecem sobre as regras de redação e sobre a escolha de passos e imagens. Elas não mudam as regras de ferramenta nem a validação de dados sensíveis. `{"pular": true}` quer dizer "decida pelo seu julgamento". **Não pergunte de novo.**
+- Se não existir e houver dúvida que **mude o manual** (um nome que a tela e a fala não resolvem, narração inaudível num passo-chave, dois caminhos possíveis, o que incluir ou omitir): escreva `perguntas.json` e **pare**, sem escrever `steps.json` nem `result.json` e sem rodar comandos:
+  ```json
+  {"perguntas":[{"id":"q1","pergunta":"O sistema da tela é o ERP Protheus ou o Datasul?","opcoes":["Protheus","Datasul"],"multipla":false}]}
+  ```
+  De 1 a 4 perguntas, cada uma com 2 a 4 opções curtas. O operador sempre pode escrever outra resposta, então não crie a opção "Outro". `multipla: true` quando mais de uma opção pode valer.
+- Dúvida pequena não vira pergunta: decida e registre em `validacao` como `{"tipo":"pendente","detalhe":"…"}`.
 
 ## Modo `gerar`
 
@@ -35,7 +47,7 @@ Você está na **pasta de uma sessão** do screenManual. O operador gravou um pr
    ```
    - `icone` é **um emoji** que represente o assunto do manual (ex.: 🖨️ impressora, 🌐 rede, 🧾 nota fiscal). Na melhoria, mantenha o atual, a não ser que o pedido seja trocar.
    - `extras` lista imagens que o operador escolheu no app (ids como `u001`, arquivo em `crops/u001.png`). Esses ids são imagens válidas em `imagem`. **Preserve** `extras` e as imagens dos passos que você não foi pedido para mudar.
-   - `imagem` é o id de um candidato **com** `crop`, ou `null`.
+   - `imagem` é o id de um candidato **com** `crop`, um id de `extras`, ou `null`.
    - **Imagem só quando necessário:** use quando ela ajuda a achar o elemento (menu, aba, botão no meio de outros) ou a conferir o resultado. Passos óbvios pelo texto, como pressionar **Enter**, clicar em **OK** ou **Apply** logo após o passo anterior, ou digitar num campo que a imagem anterior já mostra, ficam com `"imagem": null`. Tirar a imagem **não** é motivo para juntar passos: cada passo continua com uma ação só ("Clique em **IP**." e "Clique em **DHCP Server**." são dois passos).
    - Todo candidato relevante entra em algum passo ou em `descartados`, com o motivo.
 4. **Renderize, confira e publique.** Rode `screenmanual-cli render`. Se der erro, corrija o `steps.json` e repita. Com o render ok, **antes do primeiro `publish`**, leia `manual.md` e as imagens em `img/` e confira contra "Dados sensíveis" (abaixo). Se achar algo, rode `screenmanual-cli redact` no recorte em `crops/`, troque a imagem ou ajuste o texto, e rode `render` de novo (o que é publicado fica no Outline, em anexos antigos e no histórico do documento). Só então rode `screenmanual-cli publish`, que devolve `{"url","revision","status"}`.

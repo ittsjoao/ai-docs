@@ -204,3 +204,108 @@ fn check_claude_reports_the_version_or_a_missing_install() {
         .to_string();
     assert!(err.contains("não instalado"), "{err}");
 }
+
+fn args_vistos(dir: &Path) -> Vec<String> {
+    let fake: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("fake-args.json")).unwrap())
+            .unwrap();
+    fake["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a.as_str().unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn perguntas_param_a_geracao_e_guardam_sessao_e_modo() {
+    let dir = session("perg", "perguntas");
+    let (r, _) = run(&agent(), &dir, AgentMode::Gerar);
+    let AgentOutcome::Perguntas(p) = r.unwrap() else {
+        panic!("esperava perguntas")
+    };
+    assert_eq!(p.perguntas[0].id, "q1");
+    let salvo: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("perguntas.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        (salvo["session_id"].as_str(), salvo["modo"].as_str()),
+        (Some("sess-1"), Some("gerar"))
+    );
+    assert!(args_vistos(&dir).contains(&"Edit(./perguntas.json)".to_string()));
+}
+
+#[test]
+fn continuar_usa_resume_e_arquiva_as_perguntas() {
+    let dir = session("cont", "perguntas");
+    run(&agent(), &dir, AgentMode::Gerar).0.unwrap();
+    std::fs::write(
+        dir.join("respostas.json"),
+        r#"{"respostas":[{"id":"q1","escolhas":["ERP"]}]}"#,
+    )
+    .unwrap();
+    let r = agent().continuar(&dir, &mut |_| {}).unwrap();
+    assert!(matches!(r, AgentOutcome::Pronto(_)));
+    let args = args_vistos(&dir);
+    let i = args.iter().position(|a| a == "--resume").unwrap();
+    assert_eq!(args[i + 1], "sess-1");
+    assert!(
+        args[1].contains("respostas.json") && args[1].contains("gerar"),
+        "{}",
+        args[1]
+    );
+    assert!(!dir.join("perguntas.json").exists() && !dir.join("respostas.json").exists());
+    let logs: Vec<String> = std::fs::read_dir(dir.join("logs"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        logs.iter().any(|f| f.starts_with("perguntas-"))
+            && logs.iter().any(|f| f.starts_with("respostas-")),
+        "{logs:?}"
+    );
+}
+
+#[test]
+fn resume_que_falha_roda_do_zero() {
+    let dir = session("resume-falha", "resume_falha");
+    std::fs::write(dir.join("perguntas.json"), r#"{"perguntas":[{"id":"q1","pergunta":"?","opcoes":["a","b"]}],"session_id":"sess-1","modo":"melhoria"}"#).unwrap();
+    std::fs::write(dir.join("respostas.json"), r#"{"pular":true}"#).unwrap();
+    let r = agent().continuar(&dir, &mut |_| {}).unwrap();
+    assert!(matches!(r, AgentOutcome::Pronto(_)));
+    let args = args_vistos(&dir);
+    assert_eq!(
+        &args[..2],
+        ["-p", "/gerar-manual melhoria"],
+        "a 2ª rodada é do zero, no mesmo modo"
+    );
+}
+
+#[test]
+fn perguntar_de_novo_depois_das_respostas_e_erro() {
+    let dir = session("de-novo", "pergunta_de_novo");
+    std::fs::write(dir.join("perguntas.json"), r#"{"perguntas":[{"id":"q1","pergunta":"?","opcoes":["a","b"]}],"session_id":"sess-1","modo":"gerar"}"#).unwrap();
+    std::fs::write(dir.join("respostas.json"), r#"{"pular":true}"#).unwrap();
+    let e = agent().continuar(&dir, &mut |_| {}).unwrap_err();
+    assert!(
+        e.to_string()
+            .contains("novas perguntas depois das respostas"),
+        "{e}"
+    );
+    assert!(
+        !dir.join("perguntas.json").exists(),
+        "não fica em aguardando para sempre"
+    );
+}
+
+#[test]
+fn gerar_de_novo_descarta_perguntas_velhas() {
+    let dir = session("velhas", "ok");
+    std::fs::write(dir.join("perguntas.json"), "{}").unwrap();
+    std::fs::write(dir.join("respostas.json"), "{}").unwrap();
+    assert!(matches!(
+        run(&agent(), &dir, AgentMode::Gerar).0.unwrap(),
+        AgentOutcome::Pronto(_)
+    ));
+    assert!(!dir.join("perguntas.json").exists() && !dir.join("respostas.json").exists());
+}
