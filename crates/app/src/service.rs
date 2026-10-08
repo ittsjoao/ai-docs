@@ -61,6 +61,37 @@ pub enum EstadoGravacao {
     Parado,
 }
 
+/// Qual ação terminou; escolhe o texto da notificação.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Acao {
+    Parar,
+    Processar,
+    Gerar,
+    Melhorar,
+    Aprovar,
+}
+
+/// (título, corpo) da notificação do Windows ao fim de uma ação.
+pub fn texto_notificacao(
+    acao: Acao,
+    titulo: &str,
+    url: Option<&str>,
+    erro: Option<&str>,
+) -> (String, String) {
+    if let Some(e) = erro {
+        return (format!("Falhou: {titulo}"), e.to_string());
+    }
+    match (acao, url) {
+        (Acao::Aprovar, Some(u)) => (format!("Manual publicado: {titulo}"), u.to_string()),
+        (_, Some(u)) => (format!("Manual pronto: {titulo}"), u.to_string()),
+        (_, None) => (
+            format!("Sessão processada: {titulo}"),
+            "pronta para gerar o manual".into(),
+        ),
+    }
+}
+
 /// Vai para a UI pelo canal `app` (A8).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "evento", rename_all = "snake_case")]
@@ -85,10 +116,11 @@ pub enum Evento {
         estado: EstadoGravacao,
         id: String,
     },
-    /// Fim de processar/gerar/melhorar; o bin notifica se a janela estiver escondida.
+    /// Fim de qualquer ação longa; o bin sempre notifica.
     Fim {
         id: String,
         titulo: String,
+        acao: Acao,
         url: Option<String>,
         erro: Option<String>,
     },
@@ -478,7 +510,7 @@ impl<D: Deps> App<D> {
         // Recording -> Processing sem instante livre: a sessão nunca fica sem Activity.
         let id = self.parar_gravacao(Some(Activity::Processing))?;
         let r = self.processar_dentro(&id, false);
-        self.liberar(&id, r.as_ref().err(), None);
+        self.liberar(&id, Acao::Processar, r.as_ref().err(), None);
         r?;
         Ok(id)
     }
@@ -509,6 +541,7 @@ impl<D: Deps> App<D> {
             (self.emit)(Evento::Fim {
                 id: g.id.clone(),
                 titulo: self.titulo(&g.id),
+                acao: Acao::Parar,
                 url: None,
                 erro: Some(e.to_string()),
             });
@@ -535,7 +568,7 @@ impl<D: Deps> App<D> {
         Ok(())
     }
 
-    fn liberar(&self, id: &str, erro: Option<&ApiError>, url: Option<String>) {
+    fn liberar(&self, id: &str, acao: Acao, erro: Option<&ApiError>, url: Option<String>) {
         {
             let mut st = self.st();
             st.atividade.remove(id);
@@ -547,6 +580,7 @@ impl<D: Deps> App<D> {
         (self.emit)(Evento::Fim {
             id: id.into(),
             titulo: self.titulo(id),
+            acao,
             url,
             erro: erro.map(|e| e.mensagem.clone()),
         });
@@ -557,7 +591,7 @@ impl<D: Deps> App<D> {
         validar_id(id)?;
         self.ocupar(id, Activity::Processing)?;
         let r = self.processar_dentro(id, refazer);
-        self.liberar(id, r.as_ref().err(), None);
+        self.liberar(id, Acao::Processar, r.as_ref().err(), None);
         r
     }
 
@@ -664,7 +698,12 @@ impl<D: Deps> App<D> {
                 &mut |p| self.progresso(id, p),
             )?)
         })();
-        self.liberar(id, r.as_ref().err(), r.as_ref().ok().map(|x| x.url.clone()));
+        self.liberar(
+            id,
+            Acao::Gerar,
+            r.as_ref().err(),
+            r.as_ref().ok().map(|x| x.url.clone()),
+        );
         r
     }
 
@@ -692,7 +731,12 @@ impl<D: Deps> App<D> {
                 &mut |p| self.progresso(id, p),
             )?)
         })();
-        self.liberar(id, r.as_ref().err(), r.as_ref().ok().map(|x| x.url.clone()));
+        self.liberar(
+            id,
+            Acao::Melhorar,
+            r.as_ref().err(),
+            r.as_ref().ok().map(|x| x.url.clone()),
+        );
         r
     }
 
@@ -701,14 +745,17 @@ impl<D: Deps> App<D> {
         let (cfg, token) = self.credenciais()?;
         // Reserva a sessão: um segundo clique concorrente recebe `ocupado` sem tocar no disco.
         self.ocupar(id, Activity::Processing)?;
-        let r = (|| -> Result<(), ApiError> {
+        let r = (|| -> Result<Option<String>, ApiError> {
             let wiki = self.deps.wiki(&cfg.outline_url, &token)?;
-            approve(self.deps.store(), &wiki, id)?;
-            Ok(())
+            Ok(approve(self.deps.store(), &wiki, id)?.url)
         })();
-        self.st().atividade.remove(id);
-        (self.emit)(Evento::Sessao { id: id.into() });
-        r
+        self.liberar(
+            id,
+            Acao::Aprovar,
+            r.as_ref().err(),
+            r.as_ref().ok().cloned().flatten(),
+        );
+        r.map(|_| ())
     }
 
     pub fn cancelar(&self) {

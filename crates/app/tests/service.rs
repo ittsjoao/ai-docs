@@ -241,6 +241,7 @@ fn gera_e_mostra_os_avisos() {
     assert!(ev.iter().any(|e| matches!(
         e,
         Evento::Fim {
+            acao: Acao::Gerar,
             url: Some(_),
             erro: None,
             ..
@@ -357,7 +358,7 @@ fn encerrar_para_a_gravacao_sem_processar() {
 }
 
 #[test]
-fn aprovar_reserva_a_sessao_e_nao_emite_fim() {
+fn aprovar_reserva_a_sessao_e_emite_fim() {
     let (app, rx) = app("aprovar-reserva");
     let id = pronta(&app, "Manual");
     app.gerar(&id, "col", false).unwrap();
@@ -370,11 +371,52 @@ fn aprovar_reserva_a_sessao_e_nao_emite_fim() {
         .count();
     assert_eq!(sessoes, 2, "reserva e liberação: {ev:?}");
     assert!(
-        !ev.iter().any(|e| matches!(e, Evento::Fim { .. })),
+        ev.iter().any(|e| matches!(
+            e,
+            Evento::Fim {
+                acao: Acao::Aprovar,
+                url: Some(_),
+                erro: None,
+                ..
+            }
+        )),
         "{ev:?}"
     );
-    // Segundo aprovar (depois do primeiro) é erro de estado, mas a sessão não é reservada.
     assert_eq!(app.aprovar(&id).unwrap_err().kind, "estado_invalido");
+    assert!(
+        eventos(&rx).iter().any(|e| matches!(
+            e,
+            Evento::Fim {
+                acao: Acao::Aprovar,
+                erro: Some(_),
+                ..
+            }
+        )),
+        "a falha também notifica"
+    );
+}
+
+#[test]
+fn textos_da_notificacao() {
+    assert_eq!(
+        texto_notificacao(Acao::Aprovar, "NFS-e", Some("http://w/d"), None),
+        ("Manual publicado: NFS-e".into(), "http://w/d".into())
+    );
+    assert_eq!(
+        texto_notificacao(Acao::Gerar, "NFS-e", Some("http://w/d"), None),
+        ("Manual pronto: NFS-e".into(), "http://w/d".into())
+    );
+    assert_eq!(
+        texto_notificacao(Acao::Processar, "NFS-e", None, None),
+        (
+            "Sessão processada: NFS-e".into(),
+            "pronta para gerar o manual".into()
+        )
+    );
+    assert_eq!(
+        texto_notificacao(Acao::Melhorar, "NFS-e", None, Some("401")),
+        ("Falhou: NFS-e".into(), "401".into())
+    );
 }
 
 #[test]

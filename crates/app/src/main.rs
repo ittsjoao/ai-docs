@@ -6,7 +6,7 @@ mod real;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use screenmanual_app::{App, EstadoGravacao, Evento};
+use screenmanual_app::{texto_notificacao, App, EstadoGravacao, Evento};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -61,11 +61,6 @@ fn mostrar(app: &AppHandle) {
     }
 }
 
-fn visivel(app: &AppHandle) -> bool {
-    app.get_webview_window("main")
-        .is_some_and(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
-}
-
 /// "Sair" da bandeja: com gravação ou geração em andamento, a UI confirma antes.
 fn sair(app: &AppHandle) {
     if estado(app).ocupado() {
@@ -76,8 +71,7 @@ fn sair(app: &AppHandle) {
     }
 }
 
-/// Repassa o evento à UI. Antes disso, atualiza a bandeja e os atalhos e notifica o fim com a
-/// janela escondida.
+/// Repassa o evento à UI. Antes disso, atualiza a bandeja e os atalhos e notifica o fim.
 fn ao_evento(app: &AppHandle, ev: Evento) {
     match &ev {
         Evento::Gravacao { estado, .. } => {
@@ -98,16 +92,13 @@ fn ao_evento(app: &AppHandle, ev: Evento) {
             }
         }
         Evento::Fim {
-            titulo, url, erro, ..
-        } if !visivel(app) => {
-            let (titulo, corpo) = match (erro, url) {
-                (Some(e), _) => (format!("Falhou: {titulo}"), e.clone()),
-                (None, Some(u)) => (format!("Manual pronto: {titulo}"), u.clone()),
-                (None, None) => (
-                    format!("Sessão processada: {titulo}"),
-                    "pronta para gerar o manual".into(),
-                ),
-            };
+            titulo,
+            acao,
+            url,
+            erro,
+            ..
+        } => {
+            let (titulo, corpo) = texto_notificacao(*acao, titulo, url.as_deref(), erro.as_deref());
             let _ = app
                 .notification()
                 .builder()
