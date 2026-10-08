@@ -12,7 +12,7 @@ use screenmanual_core::commands::{
 };
 use screenmanual_core::domain::{Activity, TranscribeConfig, TranscriptionModel};
 use screenmanual_core::ports::{
-    AgentResult, Collection, Imaging, ManualAgent, Recorder, RecordingHandle, SessionStore,
+    AgentResult, Collection, DocNode, Imaging, ManualAgent, Recorder, RecordingHandle, SessionStore,
     Transcriber, Validacao, Wiki,
 };
 use screenmanual_core::queries::{get_session, list_sessions, SessionSummary};
@@ -217,9 +217,14 @@ pub struct Detalhe {
     pub resumo: SessionSummary,
     pub candidatos: Option<usize>,
     pub colecao: Option<String>,
+    pub pai: Option<String>,
     /// `validacao[]` do último result.json.
     pub validacao: Vec<Validacao>,
     pub pasta: String,
+}
+
+fn tem_doc(nos: &[DocNode], id: &str) -> bool {
+    nos.iter().any(|n| n.id == id || tem_doc(&n.children, id))
 }
 
 type Handle<D> = <<D as Deps>::Recorder as Recorder>::Handle;
@@ -365,10 +370,12 @@ impl<D: Deps> App<D> {
             .and_then(|b| serde_json::from_slice::<AgentResult>(&b).ok())
             .map(|r| r.validacao)
             .unwrap_or_default();
+        let publish = store.publish_state(id)?;
         Ok(Detalhe {
             resumo,
             candidatos,
-            colecao: store.publish_state(id)?.map(|p| p.collection_id),
+            colecao: publish.as_ref().map(|p| p.collection_id.clone()),
+            pai: publish.and_then(|p| p.parent_document_id),
             validacao,
             pasta: dir.display().to_string(),
         })
@@ -409,6 +416,11 @@ impl<D: Deps> App<D> {
     pub fn colecoes(&self) -> Result<Vec<Collection>, ApiError> {
         let (cfg, token) = self.credenciais()?;
         Ok(self.deps.wiki(&cfg.outline_url, &token)?.collections()?)
+    }
+
+    pub fn documentos(&self, colecao: &str) -> Result<Vec<DocNode>, ApiError> {
+        let (cfg, token) = self.credenciais()?;
+        Ok(self.deps.wiki(&cfg.outline_url, &token)?.documents(colecao)?)
     }
 
     fn garantir_modelo(
@@ -674,6 +686,7 @@ impl<D: Deps> App<D> {
         &self,
         id: &str,
         colecao: &str,
+        pai: Option<&str>,
         sobrescrever: bool,
     ) -> Result<AgentResult, ApiError> {
         validar_id(id)?;
@@ -683,6 +696,15 @@ impl<D: Deps> App<D> {
                 "estado_invalido",
                 "escolha a coleção do Outline",
             ));
+        }
+        let pai = pai.map(str::trim).filter(|p| !p.is_empty());
+        if let Some(p) = pai {
+            if !tem_doc(&self.documentos(colecao.trim())?, p) {
+                return Err(ApiError::new(
+                    "estado_invalido",
+                    "o documento escolhido não existe mais no Outline",
+                ));
+            }
         }
         let cancel = self.ocupar_geracao(id)?;
         let r = (|| -> Result<AgentResult, ApiError> {
@@ -695,7 +717,7 @@ impl<D: Deps> App<D> {
                 &agent,
                 id,
                 colecao.trim(),
-                None,
+                pai,
                 &mut |p| self.progresso(id, p),
             )?)
         })();

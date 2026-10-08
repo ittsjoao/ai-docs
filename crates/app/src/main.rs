@@ -217,6 +217,7 @@ fn main() {
             commands::salvar_config,
             commands::conectar_outline,
             commands::colecoes,
+            commands::documentos,
             commands::baixar_modelo,
             commands::gravar,
             commands::pausar,

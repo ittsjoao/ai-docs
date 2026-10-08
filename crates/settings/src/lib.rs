@@ -47,6 +47,8 @@ pub struct AppConfig {
     /// Ex.: `https://wiki.auster.local`, sem barra final.
     pub outline_url: String,
     pub colecao_padrao: Option<String>,
+    /// Documento pai padrão dentro da coleção padrão.
+    pub documento_padrao: Option<String>,
     /// `--model` do `claude -p`; vazio = padrão da conta. Validação de 2026-10-04: o sonnet basta.
     pub modelo_claude: String,
     pub transcricao: TranscribeConfig,
@@ -59,6 +61,7 @@ impl Default for AppConfig {
         Self {
             outline_url: String::new(),
             colecao_padrao: None,
+            documento_padrao: None,
             modelo_claude: "sonnet".into(),
             transcricao: TranscribeConfig::default(),
             captura: CaptureConfig::default(),
@@ -134,6 +137,12 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!("smsettings-{name}-{nanos}"))
+    }
+
+    #[test]
+    fn config_antiga_le_sem_documento_padrao() {
+        let c: AppConfig = serde_json::from_str(r#"{"outline_url":"https://w"}"#).unwrap();
+        assert_eq!(c.documento_padrao, None);
     }
 
     #[test]

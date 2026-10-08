@@ -1,7 +1,7 @@
 //! `#[tauri::command]` finos: cada um chama o `App` numa thread de bloqueio (spec 2026-10-05 §3).
 use screenmanual_app::{validar_id, ApiError, App, Deps, Detalhe, EstadoGravacao, Inicio};
 use screenmanual_core::domain::TranscriptionModel;
-use screenmanual_core::ports::{AgentResult, Collection, SessionStore};
+use screenmanual_core::ports::{AgentResult, Collection, DocNode, SessionStore};
 use screenmanual_core::queries::SessionSummary;
 use screenmanual_settings::AppConfig;
 use tauri::{AppHandle, State};
@@ -62,6 +62,11 @@ pub async fn conectar_outline(
 }
 
 #[tauri::command]
+pub async fn documentos(st: St<'_>, colecao: String) -> Result<Vec<DocNode>, ApiError> {
+    bloq(&st, move |a| a.documentos(&colecao)).await
+}
+
+#[tauri::command]
 pub async fn colecoes(st: St<'_>) -> Result<Vec<Collection>, ApiError> {
     bloq(&st, |a| a.colecoes()).await
 }
@@ -101,9 +106,10 @@ pub async fn gerar(
     st: St<'_>,
     id: String,
     colecao: String,
+    pai: Option<String>,
     sobrescrever: bool,
 ) -> Result<AgentResult, ApiError> {
-    bloq(&st, move |a| a.gerar(&id, &colecao, sobrescrever)).await
+    bloq(&st, move |a| a.gerar(&id, &colecao, pai.as_deref(), sobrescrever)).await
 }
 
 #[tauri::command]

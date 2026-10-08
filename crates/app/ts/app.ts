@@ -12,14 +12,15 @@ type Gravacao = "gravando" | "pausado" | "parado";
 
 interface Resumo { id: string; title: string; started_at: string; duration_ms: number | null; status: Status; url: string | null; error: string | null; }
 interface Validacao { tipo: string; detalhe: string; }
-interface Detalhe extends Resumo { candidatos: number | null; colecao: string | null; validacao: Validacao[]; pasta: string; }
+interface Detalhe extends Resumo { candidatos: number | null; colecao: string | null; pai: string | null; validacao: Validacao[]; pasta: string; }
 interface Inicio {
   claude_versao: string | null; claude_erro: string | null; configurado: boolean;
   gravacao: Gravacao; gravando: string | null; gerando: string | null;
   modelo_atual: Modelo; modelos: { modelo: Modelo; baixado: boolean }[];
 }
 interface Colecao { id: string; name: string; }
-interface Config { outline_url: string; colecao_padrao: string | null; transcricao: { modelo: Modelo; vocabulario: boolean }; [k: string]: unknown; }
+interface DocNode { id: string; title: string; children: DocNode[]; }
+interface Config { outline_url: string; colecao_padrao: string | null; documento_padrao: string | null; transcricao: { modelo: Modelo; vocabulario: boolean }; [k: string]: unknown; }
 interface ApiError { kind: string; mensagem: string; local?: number; remote?: number; }
 interface AgentResult { url: string; validacao?: Validacao[]; }
 type Evento =
@@ -53,6 +54,9 @@ const st = {
   progresso: {} as Record<string, string>,
   download: {} as Partial<Record<Modelo, string>>,
   colecoes: [] as Colecao[],
+  arvores: {} as Record<string, DocNode[] | "carregando">,
+  colGerar: null as string | null,
+  colConfig: null as string | null,
   config: null as Config | null,
   aviso: "",
   login: false,
@@ -101,6 +105,7 @@ async function abrirConfig(): Promise<void> {
 
 async function selecionar(id: string): Promise<void> {
   st.sel = id;
+  st.colGerar = null;
   st.tela = "sessao";
   st.det = await invoke<Detalhe>("detalhe", { id });
   if (st.inicio?.configurado && st.colecoes.length === 0) {
@@ -285,10 +290,45 @@ function opcoesColecao(sel: string | null): string {
   return st.colecoes.map((c) => `<option value="${esc(c.id)}" ${c.id === sel ? "selected" : ""}>${esc(c.name)}</option>`).join("");
 }
 
+/** Carrega a árvore da coleção uma vez por abertura do app e re-renderiza. */
+function garantirArvore(colecao: string | null): void {
+  if (!colecao || st.arvores[colecao]) return;
+  st.arvores[colecao] = "carregando";
+  invoke<DocNode[]>("documentos", { colecao })
+    .then((a) => { st.arvores[colecao] = a; })
+    .catch((e: ApiError) => { st.arvores[colecao] = []; st.aviso = e.mensagem ?? String(e); })
+    .finally(render);
+}
+
+function opcoesPai(colecao: string | null, sel: string | null): string {
+  const arv = colecao ? st.arvores[colecao] : undefined;
+  if (arv === "carregando") return `<option value="">carregando…</option>`;
+  const nos: string[] = [];
+  const andar = (lista: DocNode[], nivel: number) => lista.forEach((n) => {
+    nos.push(`<option value="${esc(n.id)}" ${n.id === sel ? "selected" : ""}>${"— ".repeat(nivel)}${esc(n.title)}</option>`);
+    andar(n.children, nivel + 1);
+  });
+  andar(arv ?? [], 1);
+  return `<option value="">(raiz da coleção)</option>` + nos.join("");
+}
+
+function existeNaArvore(colecao: string | null, id: string | null): boolean {
+  const arv = colecao ? st.arvores[colecao] : undefined;
+  if (!id || !Array.isArray(arv)) return true;
+  const tem = (l: DocNode[]): boolean => l.some((n) => n.id === id || tem(n.children));
+  return tem(arv);
+}
+
 function formGerar(travado: string): string {
-  const padrao = st.det?.colecao ?? st.config?.colecao_padrao ?? null;
+  const colecao = st.colGerar ?? st.det?.colecao ?? st.config?.colecao_padrao ?? st.colecoes[0]?.id ?? null;
+  const pai = st.det?.pai ?? (colecao === st.config?.colecao_padrao ? st.config?.documento_padrao : null) ?? null;
+  garantirArvore(colecao);
+  const sumiu = !existeNaArvore(colecao, pai)
+    ? `<p class="aviso">⚠ o documento padrão não existe mais no Outline; o manual vai para a raiz da coleção.</p>` : "";
   return `<form data-form="gerar">
-    <label>Coleção do Outline <select name="colecao" required>${opcoesColecao(padrao)}</select></label>
+    <label>Coleção do Outline <select name="colecao" required>${opcoesColecao(colecao)}</select></label>
+    <label>Dentro de <select name="pai">${opcoesPai(colecao, existeNaArvore(colecao, pai) ? pai : null)}</select></label>
+    ${sumiu}
     <button ${travado}>Gerar manual</button></form>`;
 }
 
@@ -302,6 +342,7 @@ function htmlConfig(): string {
   const c = st.config;
   const i = st.inicio;
   if (!c || !i) return "";
+  garantirArvore(st.colConfig ?? c.colecao_padrao);
   const titulo = i.configurado ? `<h2>Configurações</h2>` : `<h2>Bem-vindo ao screenManual</h2><p>Conecte o Outline para começar.</p>`;
   const modelos = MODELOS.map(([m, rotulo]) => {
     const baixado = i.modelos.find((x) => x.modelo === m)?.baixado;
@@ -316,7 +357,8 @@ function htmlConfig(): string {
     <button>Testar e salvar</button>
   </form>
   <form data-form="config">
-    <label>Coleção padrão <select name="colecao"><option value="">—</option>${opcoesColecao(c.colecao_padrao)}</select></label>
+    <label>Destino padrão: coleção <select name="colecao"><option value="">—</option>${opcoesColecao(st.colConfig ?? c.colecao_padrao)}</select></label>
+    <label>Dentro de <select name="pai">${opcoesPai(st.colConfig ?? c.colecao_padrao, c.documento_padrao)}</select></label>
     <fieldset><legend>Transcrição</legend>${modelos}
       <label class="radio"><input type="checkbox" name="vocabulario" ${c.transcricao.vocabulario ? "checked" : ""}> Usar vocabulário da sessão (experimental)</label>
     </fieldset>
@@ -361,6 +403,14 @@ document.addEventListener("click", async (ev) => {
 
 document.addEventListener("change", (ev) => {
   const t = ev.target as HTMLInputElement;
+  if (t.name === "colecao") {
+    const form = t.closest("form")?.dataset.form;
+    if (form === "gerar") st.colGerar = t.value;
+    if (form === "config") st.colConfig = t.value || null;
+    garantirArvore(t.value || null);
+    renderPainel();
+    return;
+  }
   if (t.name === "modelo" && t.type === "radio") {
     baixar(t.value as Modelo);
     renderPainel();
@@ -386,7 +436,8 @@ document.addEventListener("submit", async (ev) => {
     }
     case "gerar": {
       const colecao = s("colecao");
-      return travar(f, () => executar(id, (sobrescrever) => invoke("gerar", { id, colecao, sobrescrever })));
+      const pai = s("pai") || null;
+      return travar(f, () => executar(id, (sobrescrever) => invoke("gerar", { id, colecao, pai, sobrescrever })));
     }
     case "melhoria": {
       if (st.det?.status === "published" &&
@@ -407,7 +458,9 @@ document.addEventListener("submit", async (ev) => {
     case "config": {
       const c = st.config!;
       c.colecao_padrao = s("colecao") || null;
+      c.documento_padrao = (c.colecao_padrao && s("pai")) || null;
       c.transcricao = { modelo: (s("modelo") || c.transcricao.modelo) as Modelo, vocabulario: v.has("vocabulario") };
+      st.colConfig = null;
       return tentar(async () => {
         await invoke("salvar_config", { cfg: c });
         st.aviso = "Configurações salvas.";
