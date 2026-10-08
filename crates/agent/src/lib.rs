@@ -92,7 +92,7 @@ fn modo_nome(mode: AgentMode) -> &'static str {
 }
 
 fn prompt_continuar(modo: &str) -> String {
-    format!("As respostas do operador estão em respostas.json. Continue o modo {modo} do /gerar-manual a partir do passo 3.")
+    format!("As respostas do operador estão em respostas.json. Continue o modo {modo} do /gerar-manual de onde parou: aplique as respostas e siga a partir da escrita do steps.json.")
 }
 
 pub fn claude_args(prompt: &str, resume: Option<&str>, model: &str) -> Vec<String> {
@@ -559,20 +559,23 @@ impl ManualAgent for ClaudeAgent {
         remover_result(dir)?;
         std::fs::create_dir_all(dir.join("logs")).context("falha ao criar logs/")?;
         // as perguntas já foram lidas; um perguntas.json depois disto é pergunta nova
-        let _ = std::fs::rename(
+        std::fs::rename(
             dir.join(PERGUNTAS),
             dir.join("logs").join(format!("perguntas-{}.json", stamp())),
-        );
+        )
+        .context("falha ao arquivar perguntas.json")?;
         if let Some(sid) = p.session_id.as_deref() {
             let e = self.exec(
                 dir,
                 claude_args(&prompt_continuar(&modo), Some(sid), &self.model),
                 progress,
             )?;
-            let falhou_resume = e.is_error
+            // `--resume` recusado: erro no result ou saída sem result (só stderr)
+            let falhou_resume = (e.is_error || e.text.is_none())
                 && !dir.join("result.json").exists()
                 && !dir.join(PERGUNTAS).exists()
-                && !is_login_error(e.text.as_deref().unwrap_or(""));
+                && !is_login_error(e.text.as_deref().unwrap_or(""))
+                && !is_login_error(&e.stderr);
             if !falhou_resume {
                 return concluir(dir, &modo, e, false);
             }

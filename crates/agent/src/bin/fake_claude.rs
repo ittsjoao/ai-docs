@@ -1,7 +1,8 @@
 //! `claude` falso para os testes do `ClaudeAgent`. O modo vem de `fake-mode.txt` na pasta atual:
 //! `ok` (padrão), `sleep`, `login`, `noresult`, `orphan` (deixa um neto vivo segurando o stdout)
 //! `okmentionslogin`, `perguntas` (pergunta na 1ª rodada; com `--resume` ou `respostas.json`
-//! publica), `resume_falha` (o `--resume` falha; do zero publica) ou `pergunta_de_novo` (sempre
+//! publica), `resume_falha` (o `--resume` falha; do zero publica), `resume_stderr` (o
+//! `--resume` sai com 1 só com stderr; do zero publica) ou `pergunta_de_novo` (sempre
 //! grava `perguntas.json`). Grava os argumentos e o ambiente em `fake-args.json`.
 // ponytail: binário de teste no pacote; o instalador (plano 06) só leva o screenmanual-cli
 use std::time::Duration;
@@ -70,6 +71,13 @@ fn main() {
             } else {
                 ok_stream("Publicado.");
             }
+        }
+        "resume_stderr" => {
+            if args.iter().any(|a| a == "--resume") {
+                eprintln!("No conversation found with session ID: sess-1");
+                std::process::exit(1);
+            }
+            ok_stream("Publicado.");
         }
         "pergunta_de_novo" => {
             std::fs::write(

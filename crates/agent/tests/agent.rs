@@ -309,3 +309,56 @@ fn gerar_de_novo_descarta_perguntas_velhas() {
     ));
     assert!(!dir.join("perguntas.json").exists() && !dir.join("respostas.json").exists());
 }
+
+#[test]
+fn continuar_melhoria_retoma_pela_escrita_do_steps() {
+    let dir = session("cont-melhoria", "perguntas");
+    std::fs::write(dir.join("perguntas.json"), r#"{"perguntas":[{"id":"q1","pergunta":"?","opcoes":["a","b"]}],"session_id":"sess-1","modo":"melhoria"}"#).unwrap();
+    std::fs::write(dir.join("respostas.json"), r#"{"pular":true}"#).unwrap();
+    assert!(matches!(
+        agent().continuar(&dir, &mut |_| {}).unwrap(),
+        AgentOutcome::Pronto(_)
+    ));
+    let args = args_vistos(&dir);
+    assert!(args.contains(&"--resume".to_string()));
+    assert!(
+        args[1].contains("melhoria")
+            && args[1].contains("steps.json")
+            && !args[1].contains("passo 3"),
+        "{}",
+        args[1]
+    );
+}
+
+#[test]
+fn resume_que_sai_so_com_stderr_roda_do_zero() {
+    let dir = session("resume-stderr", "resume_stderr");
+    std::fs::write(dir.join("perguntas.json"), r#"{"perguntas":[{"id":"q1","pergunta":"?","opcoes":["a","b"]}],"session_id":"sess-1","modo":"melhoria"}"#).unwrap();
+    std::fs::write(dir.join("respostas.json"), r#"{"pular":true}"#).unwrap();
+    let r = agent().continuar(&dir, &mut |_| {}).unwrap();
+    assert!(matches!(r, AgentOutcome::Pronto(_)));
+    let args = args_vistos(&dir);
+    assert_eq!(
+        &args[..2],
+        ["-p", "/gerar-manual melhoria"],
+        "a 2ª rodada é do zero, no mesmo modo"
+    );
+}
+
+#[test]
+fn continuar_sem_sessao_roda_do_zero() {
+    let dir = session("sem-sessao", "ok");
+    std::fs::write(
+        dir.join("perguntas.json"),
+        r#"{"perguntas":[{"id":"q1","pergunta":"?","opcoes":["a","b"]}],"modo":"gerar"}"#,
+    )
+    .unwrap();
+    std::fs::write(dir.join("respostas.json"), r#"{"pular":true}"#).unwrap();
+    assert!(matches!(
+        agent().continuar(&dir, &mut |_| {}).unwrap(),
+        AgentOutcome::Pronto(_)
+    ));
+    let args = args_vistos(&dir);
+    assert!(!args.contains(&"--resume".to_string()));
+    assert_eq!(&args[..2], ["-p", "/gerar-manual gerar"]);
+}
