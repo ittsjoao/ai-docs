@@ -234,6 +234,7 @@ fn main() {
             commands::processar,
             commands::gerar,
             commands::melhorar,
+            commands::refazer_tudo,
             commands::aprovar,
             commands::passos,
             commands::imagens,

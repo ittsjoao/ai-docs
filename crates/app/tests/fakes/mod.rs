@@ -38,6 +38,8 @@ pub struct FakeDeps {
     /// Ids dos documentos que o Outline falso recebeu em `delete`.
     pub excluidos: Arc<Mutex<Vec<String>>>,
     pub outline_falha: Arc<AtomicBool>,
+    /// Se o steps.json existia no início do último `run` do agente.
+    pub steps_antes: Arc<Mutex<Option<bool>>>,
 }
 
 impl FakeDeps {
@@ -54,6 +56,7 @@ impl FakeDeps {
             revisao_vista: Arc::new(Mutex::new(None)),
             excluidos: Arc::default(),
             outline_falha: Arc::default(),
+            steps_antes: Arc::default(),
         }
     }
 }
@@ -113,6 +116,7 @@ impl Deps for FakeDeps {
             cancel,
             remota: self.remota.clone(),
             revisao_vista: self.revisao_vista.clone(),
+            steps_antes: self.steps_antes.clone(),
         })
     }
     fn token(&self) -> Result<Option<String>> {
@@ -256,6 +260,7 @@ pub struct FakeAgent {
     cancel: Arc<AtomicBool>,
     remota: Arc<AtomicU64>,
     revisao_vista: Arc<Mutex<Option<u64>>>,
+    steps_antes: Arc<Mutex<Option<bool>>>,
 }
 
 impl ManualAgent for FakeAgent {
@@ -266,6 +271,7 @@ impl ManualAgent for FakeAgent {
         progress: &mut dyn FnMut(&str),
     ) -> PortResult<AgentOutcome> {
         progress("lendo");
+        *self.steps_antes.lock().unwrap() = Some(dir.join("steps.json").exists());
         let publish = dir.join("publish.json");
         let mut p: serde_json::Value = serde_json::from_slice(&std::fs::read(&publish)?)?;
         *self.revisao_vista.lock().unwrap() = p["revision"].as_u64();
@@ -282,7 +288,9 @@ impl ManualAgent for FakeAgent {
                 }
                 std::thread::sleep(Duration::from_millis(10));
             },
-            Plano::Ok | Plano::Perguntas => serde_json::json!([{"tipo": "aviso", "detalhe": "passo 3 sem imagem"}]),
+            Plano::Ok | Plano::Perguntas => {
+                serde_json::json!([{"tipo": "aviso", "detalhe": "passo 3 sem imagem"}])
+            }
             Plano::Editado => {
                 serde_json::json!([{"tipo": "editado_manualmente", "detalhe": "exit 3"}])
             }

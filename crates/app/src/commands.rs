@@ -128,6 +128,15 @@ pub async fn melhorar(
 }
 
 #[tauri::command]
+pub async fn refazer_tudo(
+    st: St<'_>,
+    id: String,
+    sobrescrever: bool,
+) -> Result<AgentOutcome, ApiError> {
+    bloq(&st, move |a| a.refazer_tudo(&id, sobrescrever)).await
+}
+
+#[tauri::command]
 pub async fn aprovar(st: St<'_>, id: String) -> Result<(), ApiError> {
     bloq(&st, move |a| a.aprovar(&id)).await
 }

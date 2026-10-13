@@ -613,17 +613,37 @@ fn ia_pergunta_solta_a_trava_e_continua_com_as_respostas() {
     let r = app.gerar(&id, "col", None, false).unwrap();
     assert!(matches!(r, AgentOutcome::Perguntas(_)));
     assert_eq!(status(&app, &id), SessionStatus::Awaiting);
-    assert_eq!(app.inicio().unwrap().gerando, None, "a trava de geração foi solta");
+    assert_eq!(
+        app.inicio().unwrap().gerando,
+        None,
+        "a trava de geração foi solta"
+    );
     let ev = eventos(&rx);
-    assert!(ev.iter().any(|e| matches!(e, Evento::Perguntas { .. })), "{ev:?}");
-    assert!(!ev.iter().any(|e| matches!(e, Evento::Fim { .. })), "perguntas não são fim: {ev:?}");
+    assert!(
+        ev.iter().any(|e| matches!(e, Evento::Perguntas { .. })),
+        "{ev:?}"
+    );
+    assert!(
+        !ev.iter().any(|e| matches!(e, Evento::Fim { .. })),
+        "perguntas não são fim: {ev:?}"
+    );
     assert_eq!(app.perguntas(&id).unwrap().unwrap().perguntas[0].id, "q1");
 
-    assert_eq!(app.responder(&id, &Respostas::default()).unwrap_err().kind, "outro");
+    assert_eq!(
+        app.responder(&id, &Respostas::default()).unwrap_err().kind,
+        "outro"
+    );
     let r = app.responder(&id, &erp()).unwrap();
     assert!(matches!(r, AgentOutcome::Pronto(_)));
     assert_eq!(status(&app, &id), SessionStatus::Draft);
-    assert!(eventos(&rx).iter().any(|e| matches!(e, Evento::Fim { acao: Acao::Responder, url: Some(_), .. })));
+    assert!(eventos(&rx).iter().any(|e| matches!(
+        e,
+        Evento::Fim {
+            acao: Acao::Responder,
+            url: Some(_),
+            ..
+        }
+    )));
 }
 
 #[test]
@@ -632,14 +652,25 @@ fn perguntas_sobrevivem_a_reinicio_do_app() {
     let id = pronta(&app, "Manual");
     *app.deps().plano.lock().unwrap() = Plano::Perguntas;
     app.gerar(&id, "col", None, false).unwrap();
-    let root = app.deps().store.dir(&id).parent().unwrap().parent().unwrap().to_path_buf();
+    let root = app
+        .deps()
+        .store
+        .dir(&id)
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
     drop(app);
     let novo = App::new(
         FakeDeps::new(&root.join("sessions")),
         root.join("config.json"),
         Box::new(|_| {}),
     );
-    assert_eq!(novo.detalhe(&id).unwrap().resumo.status, SessionStatus::Awaiting);
+    assert_eq!(
+        novo.detalhe(&id).unwrap().resumo.status,
+        SessionStatus::Awaiting
+    );
     assert!(matches!(novo.pular(&id).unwrap(), AgentOutcome::Pronto(_)));
 }
 
@@ -653,7 +684,9 @@ fn responder_duas_vezes_ao_mesmo_tempo_da_ocupado() {
     let (a, i) = (app.clone(), id.clone());
     let t = std::thread::spawn(move || a.responder(&i, &erp()));
     for _ in 0..200 {
-        if app.inicio().unwrap().gerando.is_some() { break; }
+        if app.inicio().unwrap().gerando.is_some() {
+            break;
+        }
         std::thread::sleep(Duration::from_millis(5));
     }
     assert_eq!(app.responder(&id, &erp()).unwrap_err().kind, "ocupado");
@@ -680,9 +713,17 @@ fn excluir_so_local_tira_a_sessao_da_lista() {
     app.excluir(&id, false).unwrap();
     assert!(app.sessoes().unwrap().iter().all(|s| s.id != id));
     assert!(!app.deps().store.dir(&id).exists());
-    assert!(app.deps().excluidos.lock().unwrap().is_empty(), "o Outline não foi tocado");
-    assert!(app.detalhe(&id).is_err(), "a UI recebe erro e limpa a seleção");
-    assert!(eventos(&rx).iter().any(|e| matches!(e, Evento::Sessao { .. })));
+    assert!(
+        app.deps().excluidos.lock().unwrap().is_empty(),
+        "o Outline não foi tocado"
+    );
+    assert!(
+        app.detalhe(&id).is_err(),
+        "a UI recebe erro e limpa a seleção"
+    );
+    assert!(eventos(&rx)
+        .iter()
+        .any(|e| matches!(e, Evento::Sessao { .. })));
 }
 
 #[test]
@@ -691,7 +732,10 @@ fn excluir_com_outline_manda_o_documento_para_a_lixeira() {
     let id = pronta(&app, "Manual");
     app.gerar(&id, "col", None, false).unwrap();
     app.excluir(&id, true).unwrap();
-    assert_eq!(*app.deps().excluidos.lock().unwrap(), vec!["doc".to_string()]);
+    assert_eq!(
+        *app.deps().excluidos.lock().unwrap(),
+        vec!["doc".to_string()]
+    );
     assert!(!app.deps().store.dir(&id).exists());
 }
 
@@ -703,7 +747,11 @@ fn excluir_com_outline_falhando_mantem_a_pasta() {
     app.deps().outline_falha.store(true, Ordering::SeqCst);
     assert!(app.excluir(&id, true).is_err());
     assert!(app.deps().store.dir(&id).exists());
-    assert_eq!(status(&app, &id), SessionStatus::Draft, "a reserva foi solta");
+    assert_eq!(
+        status(&app, &id),
+        SessionStatus::Draft,
+        "a reserva foi solta"
+    );
 }
 
 #[test]
@@ -713,5 +761,70 @@ fn excluir_durante_gravacao_e_ocupado() {
     assert_eq!(app.excluir(&id, false).unwrap_err().kind, "ocupado");
     assert!(app.deps().store.dir(&id).exists());
     app.parar().unwrap();
-    assert_eq!(app.excluir("..", false).unwrap_err().kind, "estado_invalido");
+    assert_eq!(
+        app.excluir("..", false).unwrap_err().kind,
+        "estado_invalido"
+    );
+}
+
+#[test]
+fn refazer_tudo_reprocessa_e_regera_no_mesmo_destino() {
+    let (app, rx) = app("refazer");
+    let id = pronta(&app, "Manual");
+    app.gerar(&id, "col", Some("filho"), false).unwrap();
+    assert!(app.deps().store.dir(&id).join("steps.json").exists());
+    eventos(&rx);
+    let r = app.refazer_tudo(&id, false).unwrap();
+    assert!(matches!(r, AgentOutcome::Pronto(_)));
+    assert_eq!(
+        *app.deps().steps_antes.lock().unwrap(),
+        Some(false),
+        "steps.json apagado antes de gerar"
+    );
+    let d = app.detalhe(&id).unwrap();
+    assert_eq!(
+        (d.colecao.as_deref(), d.pai.as_deref()),
+        (Some("col"), Some("filho"))
+    );
+    let ev = eventos(&rx);
+    assert!(
+        ev.iter()
+            .any(|e| matches!(e, Evento::Progresso { texto, .. } if texto == "montando os passos")),
+        "{ev:?}"
+    );
+    assert!(ev.iter().any(|e| matches!(
+        e,
+        Evento::Fim {
+            acao: Acao::Gerar,
+            url: Some(_),
+            ..
+        }
+    )));
+}
+
+#[test]
+fn refazer_tudo_sem_destino_e_recusado_sem_reservar() {
+    let (app, _rx) = app("refazer-sem-destino");
+    let id = pronta(&app, "Manual");
+    let e = app.refazer_tudo(&id, false).unwrap_err();
+    assert_eq!(
+        (e.kind, e.mensagem.as_str()),
+        ("estado_invalido", "escolha o destino em Gerar")
+    );
+    assert_eq!(status(&app, &id), SessionStatus::Ready);
+    assert_eq!(app.inicio().unwrap().gerando, None);
+}
+
+#[test]
+fn refazer_tudo_sem_publish_usa_o_destino_padrao() {
+    let (app, _rx) = app("refazer-padrao");
+    let mut cfg = app.config().unwrap();
+    cfg.colecao_padrao = Some("col".into());
+    app.salvar_config(&cfg).unwrap();
+    let id = pronta(&app, "Manual");
+    assert!(matches!(
+        app.refazer_tudo(&id, false).unwrap(),
+        AgentOutcome::Pronto(_)
+    ));
+    assert_eq!(app.detalhe(&id).unwrap().colecao.as_deref(), Some("col"));
 }

@@ -7,8 +7,9 @@ use std::time::Duration;
 
 use screenmanual_agent::LoginRequired;
 use screenmanual_core::commands::{
-    add_operator_image, answer_questions, approve, cancel_questions, delete_session, generate_manual, image_path, improve_manual, process_session,
-    republish, set_step_image, start_recording, stop_recording, CommandError,
+    add_operator_image, answer_questions, approve, cancel_questions, delete_session,
+    generate_manual, image_path, improve_manual, process_session, republish, set_step_image,
+    start_recording, stop_recording, CommandError,
 };
 use screenmanual_core::domain::{
     Activity, Perguntas, Respostas, SessionStatus, TranscribeConfig, TranscriptionModel,
@@ -780,6 +781,50 @@ impl<D: Deps> App<D> {
         r
     }
 
+    /// Transcreve de novo, remonta os passos e gera o manual do zero no mesmo destino e documento.
+    pub fn refazer_tudo(&self, id: &str, sobrescrever: bool) -> Result<AgentOutcome, ApiError> {
+        validar_id(id)?;
+        let (cfg, token) = self.credenciais()?;
+        let (colecao, pai) = match self.deps.store().publish_state(id)? {
+            Some(p) => (p.collection_id, p.parent_document_id),
+            None => (
+                cfg.colecao_padrao.clone().ok_or_else(|| {
+                    ApiError::new("estado_invalido", "escolha o destino em Gerar")
+                })?,
+                cfg.documento_padrao.clone(),
+            ),
+        };
+        let cancel = self.ocupar_geracao(id)?;
+        let r = (|| -> Result<AgentOutcome, ApiError> {
+            self.processar_dentro(id, true)?;
+            // sem o steps.json a skill parte do zero; com ele, trataria como melhoria
+            let steps = self.deps.store().dir(id).join("steps.json");
+            match std::fs::remove_file(&steps) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(ApiError::new(
+                        "outro",
+                        format!("falha ao apagar {}: {e}", steps.display()),
+                    ));
+                }
+                _ => {}
+            }
+            if sobrescrever {
+                self.aceitar_revisao_remota(&cfg, &token, id)?;
+            }
+            let agent = self.deps.agent(&cfg, &token, cancel)?;
+            Ok(generate_manual(
+                self.deps.store(),
+                &agent,
+                id,
+                &colecao,
+                pai.as_deref(),
+                &mut |p| self.progresso(id, p),
+            )?)
+        })();
+        self.concluir_geracao(id, Acao::Gerar, &r);
+        r
+    }
+
     /// Solta a trava; com perguntas emite `Perguntas` em vez de `Fim`.
     fn concluir_geracao(&self, id: &str, acao: Acao, r: &Result<AgentOutcome, ApiError>) {
         if let Ok(AgentOutcome::Perguntas(_)) = r {
@@ -849,7 +894,10 @@ impl<D: Deps> App<D> {
     pub fn cancelar_perguntas(&self, id: &str) -> Result<(), ApiError> {
         validar_id(id)?;
         if self.detalhe(id)?.resumo.status != SessionStatus::Awaiting {
-            return Err(ApiError::new("estado_invalido", "não há perguntas pendentes"));
+            return Err(ApiError::new(
+                "estado_invalido",
+                "não há perguntas pendentes",
+            ));
         }
         cancel_questions(self.deps.store(), id)?;
         (self.emit)(Evento::Sessao { id: id.into() });
