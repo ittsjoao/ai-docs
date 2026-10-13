@@ -27,6 +27,8 @@ const arvores = new Map<string, DocNode[] | "erro">();
 /** Coleções com carga em andamento (evita pedir duas vezes quando o painel re-renderiza). */
 const carregando = new Set<string>();
 /** Popover aberto + termo, por raiz: sobrevive ao re-render do painel. */
+/** Redesenho da montagem atual de cada raiz: a carga em andamento chama as montagens vigentes, não as antigas. */
+const redesenhar = new Map<string, () => void>();
 const estado = new Map<string, { aberto: boolean; termo: string }>();
 
 let escutando = false;
@@ -105,6 +107,11 @@ export function montarDestino(raiz: HTMLElement, op: OpcoesDestino): void {
     realce = Math.min(realce, Math.max(linhas().length - 1, 0));
     pintar();
   };
+  redesenhar.set(raiz.id, () => {
+    if (!raiz.isConnected) return;
+    desenhar();
+    raiz.querySelector(".destino-caminho")!.innerHTML = caminho(op);
+  });
   const carregarTudo = () => {
     for (const c of op.colecoes) {
       if (arvores.has(c.id) || carregando.has(c.id)) continue;
@@ -112,7 +119,7 @@ export function montarDestino(raiz: HTMLElement, op: OpcoesDestino): void {
       op.arvore(c.id)
         .then((a) => arvores.set(c.id, a))
         .catch(() => arvores.set(c.id, "erro"))
-        .finally(() => { carregando.delete(c.id); desenhar(); raiz.querySelector(".destino-caminho")!.innerHTML = caminho(op); });
+        .finally(() => { carregando.delete(c.id); redesenhar.forEach((f) => f()); });
     }
   };
   const abrir = (termo = "") => {
