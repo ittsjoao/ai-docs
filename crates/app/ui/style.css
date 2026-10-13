@@ -100,6 +100,8 @@ form > button { align-self: flex-start; }
 .passo:hover { background: rgba(255, 255, 255, .8); }
 .passo p { flex: 1; margin: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .passo img, .passo .sem { width: 64px; height: 40px; object-fit: cover; border-radius: 9px; flex: none; }
+.passo img[data-zoom] { cursor: zoom-in; transition: transform var(--rapido); }
+.passo img[data-zoom]:hover { transform: scale(1.04); }
 .passo .sem { background: #eee; color: #aaa; display: flex; align-items: center; justify-content: center; }
 
 /* popover (destino e menu ⋯) */

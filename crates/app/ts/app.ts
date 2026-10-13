@@ -3,6 +3,7 @@ import type { Status, Modelo, Resumo, Detalhe, Inicio, PassoUi, ImagemUi, Coleca
 import { icone, type NomeIcone } from "./icones.js";
 import { esc } from "./texto.js";
 import { montarDestino } from "./destino.js";
+import { ampliar, ligarSoltar, ligarZoom } from "./galeria.js";
 
 const invoke = __TAURI__.core.invoke;
 
@@ -436,6 +437,7 @@ function carregarMiniaturas(raiz: ParentNode, id: string): void {
 async function abrirImagens(n: number): Promise<void> {
   const id = st.det!.id;
   st.passoImg = n;
+  $("#imagens-titulo").textContent = `Imagem do passo ${n}`;
   const atual = st.passos.find((p) => p.n === n)?.imagem ?? null;
   const lista = await invoke<ImagemUi[]>("imagens", { id });
   const g = $("#galeria");
@@ -460,6 +462,8 @@ $<HTMLDialogElement>("#imagens").addEventListener("paste", (e) => {
   const f = item?.getAsFile();
   if (f) { e.preventDefault(); enviarArquivo(f); }
 });
+ligarZoom();
+ligarSoltar($("#soltar"), (f) => enviarArquivo(f));
 
 async function escolherImagem(imagem: string | null): Promise<void> {
   const id = st.det!.id;
@@ -517,6 +521,11 @@ document.addEventListener("click", async (ev) => {
   if (li && !alvo.closest("[data-acao]") && !alvo.closest("[data-menu]")) return selecionar(li.dataset.id!);
   const escolhida = alvo.closest<HTMLElement>("[data-escolher]");
   if (escolhida) return escolherImagem(escolhida.dataset.escolher!);
+  const z = alvo.closest<HTMLImageElement>("img[data-zoom]");
+  if (z && z.src) {
+    const p = st.passos.find((x) => x.n === Number(z.dataset.zoom));
+    return ampliar(z.src, p ? `Passo ${p.n}. ${p.texto.replace(/\*\*/g, "")}` : "");
+  }
   const b = alvo.closest<HTMLElement>("[data-acao]");
   if (!b) return;
   ev.preventDefault();
