@@ -38,6 +38,7 @@ const st = {
   passoImg: 0,
   menu: null as string | null,
   menuExcluir: false,
+  menuNovo: false,
   /** Sessões cuja transcrição mudou depois do manual (retentar o áudio). */
   avisoTranscricao: {} as Record<string, boolean>,
 };
@@ -244,6 +245,7 @@ function renderLista(): void {
         <button class="icone pontos ${st.menu === s.id ? "on" : ""}" data-acao="menu" data-id="${esc(s.id)}" title="Ações">${icone("more-horizontal")}</button>
         ${st.menu === s.id ? htmlMenu(s) : ""}
       </li>`).join("");
+  st.menuNovo = false;
 }
 
 const OCUPADA: Status[] = ["recording", "processing", "generating"];
@@ -253,11 +255,11 @@ function htmlMenu(s: Resumo): string {
   const dis = ocupada ? `disabled title="aguarde terminar"` : "";
   const id = esc(s.id);
   const sub = st.menuExcluir ? "aberto" : "";
-  return `<div class="popover menu aberto" data-menu>
+  return `<div class="popover menu aberto ${st.menuNovo ? "novo" : ""}" data-menu>
     <button class="mi" data-acao="refazer-tudo" data-id="${id}" ${dis}>${icone("refresh-cw")} Refazer tudo</button>
     <button class="mi" data-acao="retentar-audio" data-id="${id}" ${dis}>${icone("audio-lines")} Retentar o áudio</button>
     <div class="sep"></div>
-    <button class="mi perigo" data-acao="excluir-abrir" data-id="${id}" ${dis}>${icone("trash-2")} Excluir <span class="fim">${icone("chevron-down")}</span></button>
+    <button class="mi perigo ${st.menuExcluir ? "aberta" : ""}" data-acao="excluir-abrir" data-id="${id}" ${dis}>${icone("trash-2")} Excluir <span class="fim">${icone("chevron-down")}</span></button>
     <div class="sub ${sub}">
       <button class="mi perigo" data-acao="excluir-local" data-id="${id}" ${dis}>Só a gravação</button>
       ${s.url ? `<button class="mi perigo" data-acao="excluir-outline" data-id="${id}" ${dis}>Gravação + documento no Outline</button>` : ""}
@@ -500,6 +502,12 @@ async function republicar(id: string, sobrescrever = false): Promise<void> {
 
 // ---------- eventos do DOM ----------
 
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && st.menu && !document.querySelector("dialog[open]")) {
+    st.menu = null; st.menuExcluir = false; renderLista();
+  }
+});
+
 document.addEventListener("click", async (ev) => {
   const alvo = ev.target as HTMLElement;
   if (st.menu && !alvo.closest("[data-menu]") && !alvo.closest('[data-acao="menu"]')) {
@@ -522,10 +530,13 @@ document.addEventListener("click", async (ev) => {
     case "cancelar": return tentar(() => invoke("cancelar"));
     case "processar": return executar(id, () => invoke("processar", { id, refazer: false }));
     case "menu":
-      ev.stopPropagation();
-      st.menu = st.menu === alvoId ? null : alvoId; st.menuExcluir = false;
+      st.menu = st.menu === alvoId ? null : alvoId; st.menuExcluir = false; st.menuNovo = st.menu !== null;
       return renderLista();
-    case "excluir-abrir": st.menuExcluir = !st.menuExcluir; return renderLista();
+    case "excluir-abrir":
+      st.menuExcluir = !st.menuExcluir;
+      b.nextElementSibling?.classList.toggle("aberto", st.menuExcluir);
+      b.classList.toggle("aberta", st.menuExcluir);
+      return;
     case "refazer-tudo": {
       st.menu = null;
       if (!(await perguntar("Isto transcreve de novo e reescreve o manual no mesmo documento. Trocas de imagem feitas no app se perdem. Continuar?"))) return renderLista();

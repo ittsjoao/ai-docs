@@ -147,8 +147,10 @@ mark { background: #ffe0d2; color: inherit; border-radius: 3px; }
 
 /* menu ⋯ da gravação */
 #lista li .pontos { opacity: 0; border: none; background: transparent; color: #6b6878; transition: opacity var(--rapido), background var(--rapido); }
-#lista li:hover .pontos, #lista li.sel .pontos, #lista li .pontos.on { opacity: 1; }
-.menu { right: 4px; top: 40px; width: 230px; display: flex; flex-direction: column; animation: entrar var(--rapido) ease-out; }
+#lista li:hover .pontos, #lista li.sel .pontos, #lista li .pontos.on, #lista li .pontos:focus-visible { opacity: 1; }
+.menu { right: 4px; top: 40px; width: 230px; display: flex; flex-direction: column; transform-origin: top right; }
+.menu.novo { animation: menu-in var(--rapido) ease-out; }
+@keyframes menu-in { from { opacity: 0; transform: translateY(-4px); } }
 .mi { border: none; background: transparent; border-radius: 9px; padding: 7px 9px; width: 100%; justify-content: flex-start; }
 .mi:hover { background: var(--realce); }
 .mi.perigo { color: var(--perigo); }
@@ -157,3 +159,4 @@ mark { background: #ffe0d2; color: inherit; border-radius: 3px; }
 .sub.aberto { max-height: 120px; opacity: 1; }
 .sub .mi { padding-left: 32px; font-size: 12px; }
 .sep { height: 1px; background: #f0eaf0; margin: 4px 6px; }
+.mi.aberta .fim { transform: rotate(180deg); }
