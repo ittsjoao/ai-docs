@@ -4,53 +4,64 @@
     <meta charset="utf-8" />
     <title>screenManual</title>
     <link rel="stylesheet" href="style.css" />
-    <script src="app.js" defer></script>
+    <script type="module" src="app.js"></script>
   </head>
   <body>
-    <header>
-      <h1>screenManual</h1>
+    <aside id="lateral" class="vidro">
+      <div class="marca"><span class="orbe"></span><b>screenManual</b></div>
       <div id="acoes-gravacao"></div>
-      <button data-acao="config" class="sec" title="Configurações">⚙</button>
-    </header>
-    <div id="faixa"></div>
-    <main>
+      <p class="rotulo">Gravações</p>
       <ul id="lista"></ul>
+      <p class="rotulo">Outros</p>
+      <button data-acao="config" class="nav"><span data-icone="settings"></span> Configurações</button>
+    </aside>
+    <main id="principal">
+      <div id="faixa"></div>
       <section id="painel"></section>
     </main>
     <dialog id="titulo">
       <form data-form="titulo">
-        <label>O que você vai documentar? <input name="titulo" required autofocus /></label>
+        <h3>O que você vai documentar?</h3>
+        <input name="titulo" class="campo" required autofocus />
         <menu>
-          <button type="button" data-acao="cancelar-titulo" class="sec">Cancelar</button>
-          <button value="ok">Gravar</button>
+          <button type="button" data-acao="cancelar-titulo">Cancelar</button>
+          <button value="ok" class="primario">● Gravar</button>
         </menu>
       </form>
     </dialog>
     <dialog id="pergunta">
       <p></p>
       <menu>
-        <button value="nao" class="sec">Não</button>
-        <button value="sim">Sim</button>
+        <button value="nao">Não</button>
+        <button value="sim" class="primario">Sim</button>
       </menu>
     </dialog>
     <dialog id="imagens">
-      <p class="dica">Imagens escolhidas aqui não passam pela revisão de dados sensíveis. Confira se não mostram senha ou dado de cliente.</p>
+      <h3 id="imagens-titulo">Imagem do passo</h3>
       <div id="galeria"></div>
-      <p class="dica">Ou cole um print (Ctrl+V) aqui.</p>
+      <label id="soltar" class="soltar">
+        <span data-icone="upload"></span>
+        Arraste um print aqui, <b>escolha um arquivo</b> ou cole com <b>Ctrl+V</b>
+        <input type="file" id="arquivo" accept="image/png,image/jpeg" hidden />
+      </label>
+      <p class="dica">Imagens escolhidas aqui não passam pela revisão de dados sensíveis. Confira se não mostram senha ou dado de cliente.</p>
       <menu>
-        <label class="sec botao">Escolher arquivo… <input type="file" id="arquivo" accept="image/png,image/jpeg" hidden /></label>
-        <button value="sem" class="sec">Sem imagem</button>
-        <button value="fechar" class="sec">Fechar</button>
+        <button value="sem"><span data-icone="image-off"></span> Sem imagem</button>
+        <button value="fechar">Fechar</button>
       </menu>
+    </dialog>
+    <dialog id="zoom">
+      <img id="zoom-img" alt="" />
+      <div class="zoom-rodape"><span id="zoom-legenda"></span><button value="fechar"><span data-icone="x"></span> Fechar</button></div>
     </dialog>
     <dialog id="duvidas">
       <form data-form="duvidas">
         <h3>A IA tem dúvidas</h3>
         <div id="lista-duvidas"></div>
         <menu>
-          <button type="button" data-acao="cancelar-perguntas" class="sec">Cancelar</button>
-          <button type="button" data-acao="pular" class="sec">Pular</button>
-          <button value="ok">Responder</button>
+          <button type="button" data-acao="cancelar-perguntas">Cancelar</button>
+          <button type="button" data-acao="pular">Pular</button>
+          <button value="ok" class="primario">Responder</button>
         </menu>
       </form>
     </dialog>

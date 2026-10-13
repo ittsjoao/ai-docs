@@ -1,42 +1,7 @@
 // UI do screenManual (adendo 2026-10-05): TS puro, sem framework; o Tauri vem em window.__TAURI__.
-interface TauriGlobal {
-  core: { invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> };
-  event: { listen<T>(nome: string, cb: (e: { payload: T }) => void): Promise<() => void> };
-  window: { getCurrentWindow(): { hide(): Promise<void> } };
-}
-declare const __TAURI__: TauriGlobal;
-
-type Status = "recording" | "interrupted" | "stopped" | "processing" | "ready" | "generating" | "awaiting" | "draft" | "published" | "error";
-type Modelo = "rapido" | "equilibrado" | "preciso";
-type Gravacao = "gravando" | "pausado" | "parado";
-
-interface Resumo { id: string; title: string; started_at: string; duration_ms: number | null; status: Status; url: string | null; error: string | null; }
-interface Validacao { tipo: string; detalhe: string; }
-interface Detalhe extends Resumo { candidatos: number | null; colecao: string | null; pai: string | null; validacao: Validacao[]; pasta: string; }
-interface Inicio {
-  claude_versao: string | null; claude_erro: string | null; configurado: boolean;
-  gravacao: Gravacao; gravando: string | null; gerando: string | null;
-  modelo_atual: Modelo; modelos: { modelo: Modelo; baixado: boolean }[];
-}
-interface PassoUi { secao: string; n: number; texto: string; imagem: string | null; }
-interface ImagemUi { id: string; origem: "gravacao" | "operador"; }
-interface Colecao { id: string; name: string; }
-interface DocNode { id: string; title: string; children: DocNode[]; }
-interface Config { outline_url: string; colecao_padrao: string | null; documento_padrao: string | null; transcricao: { modelo: Modelo; vocabulario: boolean }; [k: string]: unknown; }
-interface ApiError { kind: string; mensagem: string; local?: number; remote?: number; }
-interface Pergunta { id: string; pergunta: string; opcoes: string[]; multipla: boolean; }
-interface Perguntas { perguntas: Pergunta[]; }
-interface AgentResult { tipo: "pronto" | "perguntas"; url?: string; validacao?: Validacao[]; }
-type Evento =
-  | { evento: "sessao"; id: string }
-  | { evento: "progresso"; id: string; texto: string }
-  | { evento: "modelo"; modelo: Modelo; baixado: number; total: number }
-  | { evento: "modelo_fim"; modelo: Modelo; erro: string | null }
-  | { evento: "gravacao"; estado: Gravacao; id: string }
-  | { evento: "fim"; id: string; titulo: string; url: string | null; erro: string | null }
-  | { evento: "perguntas"; id: string; titulo: string }
-  | { evento: "pedir_titulo" }
-  | { evento: "confirmar_sair" };
+import type { Status, Modelo, Resumo, Detalhe, Inicio, PassoUi, ImagemUi, Colecao, DocNode, Config, ApiError, Perguntas, AgentResult, Evento } from "./tipos.js";
+import { icone, type NomeIcone } from "./icones.js";
+import { esc } from "./texto.js";
 
 const invoke = __TAURI__.core.invoke;
 
@@ -74,7 +39,20 @@ const st = {
 };
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/** Troca cada `<span data-icone="x">` estático do index.html pelo SVG. */
+function iconesEstaticos(): void {
+  document.querySelectorAll<HTMLElement>("[data-icone]").forEach((e) => {
+    e.outerHTML = icone(e.dataset.icone as NomeIcone);
+  });
+}
+iconesEstaticos();
+
+const ICONE_STATUS: Record<Status, NomeIcone> = {
+  recording: "circle-dot", interrupted: "file-video", stopped: "file-video", processing: "loader",
+  ready: "file-video", generating: "loader", awaiting: "message-circle-question", draft: "file-pen-line",
+  published: "book-check", error: "circle-alert",
+};
 
 function agoraLocal(): string {
   const d = new Date();
@@ -241,20 +219,24 @@ function renderTopo(): void {
   const i = st.inicio;
   if (!i) return;
   $("#acoes-gravacao").innerHTML = i.gravacao === "parado"
-    ? `<button data-acao="nova">▶ Gravar</button>`
-    : `<button data-acao="pausar" class="sec">${i.gravacao === "pausado" ? "▶ Retomar" : "⏸ Pausar"}</button><button data-acao="parar">■ Parar</button>`;
+    ? `<button data-acao="nova" class="primario">● Gravar</button>`
+    : `<button data-acao="pausar">${icone("pause")} ${i.gravacao === "pausado" ? "Retomar" : "Pausar"}</button>` +
+      `<button data-acao="parar" class="primario">${icone("square")} Parar</button>`;
   const faixa: string[] = [];
-  if (i.claude_erro) faixa.push(`Claude Code não instalado: ${esc(i.claude_erro)}`);
-  if (st.login) faixa.push(`O Claude Code não está logado. <button data-acao="login">Fazer login</button>`);
-  if (st.aviso) faixa.push(`${esc(st.aviso)} <button data-acao="fechar-aviso" class="sec">×</button>`);
-  $("#faixa").innerHTML = faixa.map((f) => `<p>${f}</p>`).join("");
+  if (i.claude_erro) faixa.push(`<span>Claude Code não instalado: ${esc(i.claude_erro)}</span>`);
+  if (st.login) faixa.push(`<span>O Claude Code não está logado.</span><button data-acao="login">Fazer login</button>`);
+  if (st.aviso) faixa.push(`<span>${esc(st.aviso)}</span><button data-acao="fechar-aviso" class="icone" title="Fechar">${icone("x")}</button>`);
+  $("#faixa").innerHTML = faixa.map((f) => `<p>${icone("circle-alert")}${f}</p>`).join("");
 }
 
 function renderLista(): void {
   $("#lista").innerHTML = st.sessoes.length === 0
-    ? `<li class="vazio">Nenhuma gravação ainda. Clique em ▶ Gravar.</li>`
+    ? `<li class="vazio">Nenhuma gravação ainda. Clique em ● Gravar.</li>`
     : st.sessoes.map((s) =>
-      `<li data-id="${esc(s.id)}" class="${s.id === st.sel ? "sel" : ""}"><strong>${esc(s.title)}</strong><span class="st-${s.status}">${STATUS[s.status]}</span></li>`).join("");
+      `<li data-id="${esc(s.id)}" class="${s.id === st.sel ? "sel" : ""}">
+        <span class="tile s-${s.status}">${icone(ICONE_STATUS[s.status])}</span>
+        <span class="meta-item"><strong>${esc(s.title)}</strong><span class="t-${s.status}">${STATUS[s.status]}</span></span>
+      </li>`).join("");
 }
 
 /** Troca o HTML do painel preservando o que o operador digitou, se for a mesma tela/sessão. */
@@ -284,15 +266,22 @@ function trocar(p: HTMLElement, html: string): void {
 
 function renderPainel(): void {
   const p = $("#painel");
-  if (st.tela === "config") return trocar(p, htmlConfig());
+  if (st.tela === "config") return trocar(p, `<div class="cartao">${htmlConfig()}</div>`);
   const d = st.det;
-  if (!d) return trocar(p, `<p class="vazio">Selecione uma sessão ou clique em ▶ Gravar.</p>`);
+  if (!d) return trocar(p, `<p class="vazio">Selecione uma gravação ou clique em ● Gravar.</p>`);
   const dur = d.duration_ms ? ` · ${Math.max(1, Math.round(d.duration_ms / 60000))} min` : "";
   const cand = d.candidatos !== null ? ` · ${d.candidatos} passos candidatos` : "";
-  let h = `<h2>${esc(d.title)}</h2><p class="meta">${STATUS[d.status]}${dur}${cand}</p>`;
-  if (d.url) h += `<p><a href="#" data-acao="link" data-url="${esc(d.url)}">🔗 ${esc(d.url)}</a></p>`;
-  h += d.validacao.map((v) => `<p class="aviso">⚠ ${esc(v.tipo)}: ${esc(v.detalhe)}</p>`).join("");
-  trocar(p, h + htmlAcoes(d));
+  const link = d.url ? `<button data-acao="link" data-url="${esc(d.url)}">${icone("external-link")} Abrir no Outline</button>` : "";
+  const avisos = d.validacao.map((v) => `<p class="aviso">${icone("circle-alert")} ${esc(v.tipo)}: ${esc(v.detalhe)}</p>`).join("");
+  const cab = `<div class="cartao">
+    <div class="cabecalho">
+      <div class="titulo"><span class="tile grande s-${d.status}">${icone(ICONE_STATUS[d.status])}</span>
+        <div><h2>${esc(d.title)}</h2><p class="meta">${STATUS[d.status]}${dur}${cand}</p></div></div>
+      ${link}
+    </div>${avisos}
+    <div class="linha-acoes">${htmlAcoes(d)}</div>
+  </div>`;
+  trocar(p, cab + htmlPassos(d));
   carregarMiniaturas(p, d.id);
 }
 
@@ -305,21 +294,21 @@ function htmlAcoes(d: Detalhe): string {
   const dica = outra ? `<p class="dica">Aguarde a geração de ${esc(tituloOutra)} terminar.</p>`
     : semClaude ? `<p class="dica">Instale o Claude Code para gerar manuais.</p>` : "";
   switch (d.status) {
-    case "recording": return `<p>Gravando… use ⏸ / ■ no topo ou na bandeja. Ctrl+Alt+P pausa/retoma; Ctrl+Alt+M marca um passo.</p>`;
+    case "recording": return `<p>Gravando… use Pausar ou Parar na barra lateral ou na bandeja. Ctrl+Alt+P pausa ou retoma, Ctrl+Alt+M marca um passo.</p>`;
     case "processing": return prog;
-    case "awaiting": return `<p>A IA tem dúvidas antes de escrever o manual.</p><button data-acao="responder">Responder…</button>`;
-    case "generating": return prog + `<button data-acao="cancelar" class="sec">Cancelar</button>`;
+    case "awaiting": return `<p>A IA tem dúvidas antes de escrever o manual.</p><button data-acao="responder" class="primario">Responder…</button>`;
+    case "generating": return prog + `<button data-acao="cancelar">Cancelar</button>`;
     case "interrupted":
-    case "stopped": return `<p>Gravação ainda não processada.</p><button data-acao="processar">Processar</button>`;
-    case "ready": return formGerar(travado) + dica + `<button data-acao="reprocessar" class="sec">Refazer transcrição</button>`;
-    case "draft": return `<button data-acao="aprovar">✓ Aprovar e publicar</button>` + htmlPassos(d) + formMelhoria(travado) + dica;
-    case "published": return htmlPassos(d) + formMelhoria(travado) + dica;
+    case "stopped": return `<p>Gravação ainda não processada.</p><button data-acao="processar" class="primario">Processar</button>`;
+    case "ready": return formGerar(travado) + dica;
+    case "draft": return `<button data-acao="aprovar" class="primario">${icone("check")} Aprovar e publicar</button>` + formMelhoria(travado) + dica;
+    case "published": return formMelhoria(travado) + dica;
     case "error": {
-      const repetir = st.ultima[d.id] ? `<button data-acao="repetir">Tentar de novo</button> ` : "";
+      const repetir = st.ultima[d.id] ? `<button data-acao="repetir" class="primario">Tentar de novo</button> ` : "";
       const fundo = d.url ? formMelhoria(travado)
         : d.candidatos !== null ? formGerar(travado)
-        : `<button data-acao="processar">Processar</button>`;
-      return `<pre class="erro">${esc(d.error ?? "")}</pre>${repetir}<button data-acao="pasta" class="sec">Abrir pasta</button>${fundo}${dica}`;
+        : `<button data-acao="processar" class="primario">Processar</button>`;
+      return `<pre class="erro">${esc(d.error ?? "")}</pre>${repetir}<button data-acao="pasta">Abrir pasta</button>${fundo}${dica}`;
     }
   }
 }
@@ -362,18 +351,18 @@ function formGerar(travado: string): string {
   const pai = st.det?.pai ?? (colecao === st.config?.colecao_padrao ? st.config?.documento_padrao : null) ?? null;
   garantirArvore(colecao);
   const sumiu = !existeNaArvore(colecao, pai)
-    ? `<p class="aviso">⚠ o documento padrão não existe mais no Outline; o manual vai para a raiz da coleção.</p>` : "";
+    ? `<p class="aviso">${icone("circle-alert")} o documento padrão não existe mais no Outline; o manual vai para a raiz da coleção.</p>` : "";
   return `<form data-form="gerar">
     <label>Coleção do Outline <select name="colecao" required>${opcoesColecao(colecao)}</select></label>
     <label>Dentro de <select name="pai">${opcoesPai(colecao, existeNaArvore(colecao, pai) ? pai : null)}</select></label>
     ${sumiu}
-    <button ${travado}>Gerar manual</button></form>`;
+    <button ${travado} class="primario">Gerar manual</button></form>`;
 }
 
 function formMelhoria(travado: string): string {
-  return `<form data-form="melhoria">
-    <label>O que melhorar <textarea name="texto" rows="3" required placeholder="ex.: junte os passos 3 e 4"></textarea></label>
-    <button ${travado}>Enviar melhoria</button></form>`;
+  return `<form data-form="melhoria" class="melhoria">
+    <input name="texto" required placeholder="O que melhorar? ex.: junte os passos 3 e 4">
+    <button ${travado} class="icone" title="Enviar melhoria">${icone("send-horizontal")}</button></form>`;
 }
 
 function htmlConfig(): string {
@@ -392,7 +381,7 @@ function htmlConfig(): string {
   <form data-form="outline">
     <label>URL do Outline <input name="url" value="${esc(c.outline_url)}" placeholder="https://wiki.suaempresa.com" required></label>
     <label>Token de API <input name="token" type="password" placeholder="${i.configurado ? "deixe vazio para manter o atual" : "cole o token"}"></label>
-    <button>Testar e salvar</button>
+    <button class="primario">Testar e salvar</button>
   </form>
   <form data-form="config">
     <label>Destino padrão: coleção <select name="colecao"><option value="">—</option>${opcoesColecao(st.colConfig ?? c.colecao_padrao)}</select></label>
@@ -400,8 +389,8 @@ function htmlConfig(): string {
     <fieldset><legend>Transcrição</legend>${modelos}
       <label class="radio"><input type="checkbox" name="vocabulario" ${c.transcricao.vocabulario ? "checked" : ""}> Usar vocabulário da sessão (experimental)</label>
     </fieldset>
-    <button>Salvar</button>
-    ${i.configurado ? `<button type="button" data-acao="voltar" class="sec">Voltar</button>` : ""}
+    <button class="primario">Salvar</button>
+    ${i.configurado ? `<button type="button" data-acao="voltar">Voltar</button>` : ""}
   </form>`;
 }
 
@@ -420,11 +409,11 @@ async function urlImagem(id: string, imagem: string): Promise<string> {
 function htmlPassos(d: Detalhe): string {
   if (st.passos.length === 0) return "";
   const linhas = st.passos.map((p) => `<div class="passo">
-    ${p.imagem ? `<img data-mini="${esc(p.imagem)}" alt="">` : `<span class="sem">sem imagem</span>`}
+    ${p.imagem ? `<img data-mini="${esc(p.imagem)}" data-zoom="${p.n}" alt="" title="Ampliar">` : `<span class="sem">${icone("image-off")}</span>`}
     <p><strong>${p.n}.</strong> ${esc(p.texto.replace(/\*\*/g, ""))}</p>
-    <button data-acao="img-passo" data-n="${p.n}" class="sec" title="Imagem do passo">🖼</button></div>`).join("");
-  const publicar = st.alterado[d.id] ? `<button data-acao="republicar">Publicar alterações</button>` : "";
-  return `<h3>Passos</h3>${linhas}${publicar}`;
+    <button data-acao="img-passo" data-n="${p.n}" class="icone" title="Imagem do passo">${icone(p.imagem ? "image" : "image-plus")}</button></div>`).join("");
+  const publicar = st.alterado[d.id] ? `<button data-acao="republicar" class="primario">Publicar alterações</button>` : "";
+  return `<div class="cartao"><p class="rotulo" style="margin-top:0">Passos</p>${linhas}${publicar}</div>`;
 }
 
 /** Preenche os <img data-mini> depois que o HTML entrou no DOM. */

@@ -12,10 +12,12 @@
       {
         "label": "main",
         "title": "screenManual",
-        "width": 720,
-        "height": 560,
-        "resizable": false,
-        "maximizable": false
+        "width": 1100,
+        "height": 700,
+        "minWidth": 860,
+        "minHeight": 560,
+        "resizable": true,
+        "maximizable": true
       }
     ],
     "security": {
