@@ -125,6 +125,7 @@ export function montarDestino(raiz: HTMLElement, op: OpcoesDestino): void {
   const abrir = (termo = "") => {
     pop.classList.add("aberto"); realce = 0; busca.value = termo;
     estado.set(raiz.id, { aberto: true, termo });
+    for (const [k, v] of arvores) if (v === "erro") arvores.delete(k); // tenta de novo
     carregarTudo(); desenhar(); busca.focus(); busca.setSelectionRange(termo.length, termo.length);
   };
   const fechar = () => { pop.classList.remove("aberto"); estado.set(raiz.id, { aberto: false, termo: "" }); };

@@ -796,8 +796,8 @@ impl<D: Deps> App<D> {
         };
         let cancel = self.ocupar_geracao(id)?;
         let r = (|| -> Result<AgentOutcome, ApiError> {
-            self.processar_dentro(id, true)?;
-            // sem o steps.json a skill parte do zero; com ele, trataria como melhoria
+            self.processar_dentro(id, !sobrescrever)?;
+            // ao sobrescrever (nova tentativa) a transcrição em cache vale; sem o steps.json a skill parte do zero; com ele, trataria como melhoria
             let steps = self.deps.store().dir(id).join("steps.json");
             match std::fs::remove_file(&steps) {
                 Err(e) if e.kind() != std::io::ErrorKind::NotFound => {

@@ -93,6 +93,7 @@ async function carregarColecoes(): Promise<Colecao[]> {
 
 async function abrirConfig(): Promise<void> {
   st.tela = "config";
+  st.destConfig = null;
   st.config = await invoke<Config>("config");
   if (st.inicio?.configurado && st.colecoes.length === 0) {
     st.colecoes = await carregarColecoes();
@@ -464,7 +465,11 @@ $<HTMLDialogElement>("#imagens").addEventListener("paste", (e) => {
 });
 ligarZoom();
 bloquearSoltarFora();
-ligarSoltar($("#soltar"), (f) => enviarArquivo(f));
+ligarSoltar($("#soltar"), (f) => enviarArquivo(f), () => {
+  st.aviso = "não é uma imagem PNG ou JPEG";
+  $<HTMLDialogElement>("#imagens").close();
+  render();
+});
 
 async function escolherImagem(imagem: string | null): Promise<void> {
   const id = st.det!.id;
@@ -601,7 +606,7 @@ document.addEventListener("click", async (ev) => {
     case "pasta": return tentar(() => invoke("abrir_pasta", { id }));
     case "login": return tentar(() => invoke("fazer_login"));
     case "config": await abrirConfig(); return render();
-    case "voltar": st.tela = "sessao"; return render();
+    case "voltar": st.tela = "sessao"; st.destConfig = null; return render();
     case "fechar-aviso": st.aviso = ""; return render();
   }
 });

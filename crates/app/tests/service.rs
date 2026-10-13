@@ -803,6 +803,20 @@ fn refazer_tudo_reprocessa_e_regera_no_mesmo_destino() {
 }
 
 #[test]
+fn refazer_tudo_ao_sobrescrever_nao_retranscreve() {
+    let (app, _rx) = app("refazer-sobrescrever");
+    let id = pronta(&app, "Manual");
+    app.gerar(&id, "col", None, false).unwrap();
+    std::fs::write(app.deps().store.dir(&id).join("audio.wav"), [0u8; 100]).unwrap();
+    let n = || app.deps().transcricoes.load(Ordering::SeqCst);
+    let antes = n();
+    app.refazer_tudo(&id, false).unwrap();
+    assert_eq!(n(), antes + 1, "refazer tudo transcreve de novo");
+    app.refazer_tudo(&id, true).unwrap();
+    assert_eq!(n(), antes + 1, "a nova tentativa usa a transcrição em cache");
+}
+
+#[test]
 fn refazer_tudo_sem_destino_e_recusado_sem_reservar() {
     let (app, _rx) = app("refazer-sem-destino");
     let id = pronta(&app, "Manual");

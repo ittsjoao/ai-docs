@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::SeqCst};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering::SeqCst};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -40,6 +40,8 @@ pub struct FakeDeps {
     pub outline_falha: Arc<AtomicBool>,
     /// Se o steps.json existia no início do último `run` do agente.
     pub steps_antes: Arc<Mutex<Option<bool>>>,
+    /// Quantas vezes o transcritor falso rodou.
+    pub transcricoes: Arc<AtomicUsize>,
 }
 
 impl FakeDeps {
@@ -57,6 +59,7 @@ impl FakeDeps {
             excluidos: Arc::default(),
             outline_falha: Arc::default(),
             steps_antes: Arc::default(),
+            transcricoes: Arc::default(),
         }
     }
 }
@@ -98,7 +101,7 @@ impl Deps for FakeDeps {
         Ok(())
     }
     fn transcriber(&self, _cfg: &TranscribeConfig) -> FakeTranscriber {
-        FakeTranscriber
+        FakeTranscriber(self.transcricoes.clone())
     }
     fn wiki(&self, _url: &str, token: &str) -> Result<FakeWiki> {
         if token == "ruim" {
@@ -171,10 +174,11 @@ impl RecordingHandle for FakeHandle {
     }
 }
 
-pub struct FakeTranscriber;
+pub struct FakeTranscriber(Arc<AtomicUsize>);
 
 impl Transcriber for FakeTranscriber {
     fn transcribe(&self, _audio: &Path, _prompt: &str) -> PortResult<Vec<Segment>> {
+        self.0.fetch_add(1, SeqCst);
         Ok(vec![])
     }
 }

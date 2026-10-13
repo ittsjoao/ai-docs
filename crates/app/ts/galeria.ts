@@ -16,7 +16,7 @@ export function ligarZoom(): void {
 }
 
 /** Arrastar e soltar um arquivo em `alvo`; o primeiro arquivo vai para `aoArquivo`. */
-export function ligarSoltar(alvo: HTMLElement, aoArquivo: (f: File) => void): void {
+export function ligarSoltar(alvo: HTMLElement, aoArquivo: (f: File) => void, aoInvalido?: () => void): void {
   alvo.addEventListener("dragover", (e) => { e.preventDefault(); alvo.classList.add("sobre"); });
   alvo.addEventListener("dragleave", (e) => {
     if (!alvo.contains(e.relatedTarget as Node)) alvo.classList.remove("sobre");
@@ -26,6 +26,7 @@ export function ligarSoltar(alvo: HTMLElement, aoArquivo: (f: File) => void): vo
     alvo.classList.remove("sobre");
     const f = e.dataTransfer?.files[0];
     if (f) aoArquivo(f);
+    else aoInvalido?.();
   });
 }
 
