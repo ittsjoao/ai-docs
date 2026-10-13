@@ -3,7 +3,7 @@ import type { Status, Modelo, Resumo, Detalhe, Inicio, PassoUi, ImagemUi, Coleca
 import { icone, type NomeIcone } from "./icones.js";
 import { esc } from "./texto.js";
 import { montarDestino } from "./destino.js";
-import { ampliar, ligarSoltar, ligarZoom } from "./galeria.js";
+import { ampliar, bloquearSoltarFora, ligarSoltar, ligarZoom } from "./galeria.js";
 
 const invoke = __TAURI__.core.invoke;
 
@@ -463,6 +463,7 @@ $<HTMLDialogElement>("#imagens").addEventListener("paste", (e) => {
   if (f) { e.preventDefault(); enviarArquivo(f); }
 });
 ligarZoom();
+bloquearSoltarFora();
 ligarSoltar($("#soltar"), (f) => enviarArquivo(f));
 
 async function escolherImagem(imagem: string | null): Promise<void> {

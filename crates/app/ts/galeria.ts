@@ -18,11 +18,19 @@ export function ligarZoom(): void {
 /** Arrastar e soltar um arquivo em `alvo`; o primeiro arquivo vai para `aoArquivo`. */
 export function ligarSoltar(alvo: HTMLElement, aoArquivo: (f: File) => void): void {
   alvo.addEventListener("dragover", (e) => { e.preventDefault(); alvo.classList.add("sobre"); });
-  alvo.addEventListener("dragleave", () => alvo.classList.remove("sobre"));
+  alvo.addEventListener("dragleave", (e) => {
+    if (!alvo.contains(e.relatedTarget as Node)) alvo.classList.remove("sobre");
+  });
   alvo.addEventListener("drop", (e) => {
     e.preventDefault();
     alvo.classList.remove("sobre");
     const f = e.dataTransfer?.files[0];
     if (f) aoArquivo(f);
   });
+}
+
+/** Sem isto, soltar um arquivo fora do alvo faz o WebView navegar para ele. */
+export function bloquearSoltarFora(): void {
+  document.addEventListener("dragover", (e) => e.preventDefault());
+  document.addEventListener("drop", (e) => e.preventDefault());
 }
