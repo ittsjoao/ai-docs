@@ -36,6 +36,10 @@ const st = {
   alterado: {} as Record<string, boolean>,
   urls: {} as Record<string, string>,
   passoImg: 0,
+  menu: null as string | null,
+  menuExcluir: false,
+  /** Sessões cuja transcrição mudou depois do manual (retentar o áudio). */
+  avisoTranscricao: {} as Record<string, boolean>,
 };
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
@@ -68,6 +72,7 @@ async function carregar(): Promise<void> {
   st.inicio = await invoke<Inicio>("inicio");
   st.sessoes = await invoke<Resumo[]>("sessoes");
   st.det = st.sel ? await invoke<Detalhe>("detalhe", { id: st.sel }).catch(() => null) : null;
+  if (st.sel && !st.det) st.sel = null; // a sessão selecionada foi excluída
   st.passos = st.det && (st.det.status === "draft" || st.det.status === "published")
     ? await invoke<PassoUi[]>("passos", { id: st.det.id }).catch(() => []) : [];
   if (!st.inicio.configurado && st.tela !== "config") await abrirConfig();
@@ -236,7 +241,28 @@ function renderLista(): void {
       `<li data-id="${esc(s.id)}" class="${s.id === st.sel ? "sel" : ""}">
         <span class="tile s-${s.status}">${icone(ICONE_STATUS[s.status])}</span>
         <span class="meta-item"><strong>${esc(s.title)}</strong><span class="t-${s.status}">${STATUS[s.status]}</span></span>
+        <button class="icone pontos ${st.menu === s.id ? "on" : ""}" data-acao="menu" data-id="${esc(s.id)}" title="Ações">${icone("more-horizontal")}</button>
+        ${st.menu === s.id ? htmlMenu(s) : ""}
       </li>`).join("");
+}
+
+const OCUPADA: Status[] = ["recording", "processing", "generating"];
+
+function htmlMenu(s: Resumo): string {
+  const ocupada = OCUPADA.includes(s.status) || st.inicio?.gerando === s.id;
+  const dis = ocupada ? `disabled title="aguarde terminar"` : "";
+  const id = esc(s.id);
+  const sub = st.menuExcluir ? "aberto" : "";
+  return `<div class="popover menu aberto" data-menu>
+    <button class="mi" data-acao="refazer-tudo" data-id="${id}" ${dis}>${icone("refresh-cw")} Refazer tudo</button>
+    <button class="mi" data-acao="retentar-audio" data-id="${id}" ${dis}>${icone("audio-lines")} Retentar o áudio</button>
+    <div class="sep"></div>
+    <button class="mi perigo" data-acao="excluir-abrir" data-id="${id}" ${dis}>${icone("trash-2")} Excluir <span class="fim">${icone("chevron-down")}</span></button>
+    <div class="sub ${sub}">
+      <button class="mi perigo" data-acao="excluir-local" data-id="${id}" ${dis}>Só a gravação</button>
+      ${s.url ? `<button class="mi perigo" data-acao="excluir-outline" data-id="${id}" ${dis}>Gravação + documento no Outline</button>` : ""}
+    </div>
+  </div>`;
 }
 
 /** Troca o HTML do painel preservando o que o operador digitou, se for a mesma tela/sessão. */
@@ -294,12 +320,14 @@ function renderPainel(): void {
   const cand = d.candidatos !== null ? ` · ${d.candidatos} passos candidatos` : "";
   const link = d.url ? `<button data-acao="link" data-url="${esc(d.url)}">${icone("external-link")} Abrir no Outline</button>` : "";
   const avisos = d.validacao.map((v) => `<p class="aviso">${icone("circle-alert")} ${esc(v.tipo)}: ${esc(v.detalhe)}</p>`).join("");
+  const transcricao = st.avisoTranscricao[d.id]
+    ? `<p class="aviso">${icone("circle-alert")} A transcrição mudou. Use Refazer tudo ou peça uma melhoria para que o manual use a nova fala.</p>` : "";
   const cab = `<div class="cartao">
     <div class="cabecalho">
       <div class="titulo"><span class="tile grande s-${d.status}">${icone(ICONE_STATUS[d.status])}</span>
         <div><h2>${esc(d.title)}</h2><p class="meta">${STATUS[d.status]}${dur}${cand}</p></div></div>
       ${link}
-    </div>${avisos}
+    </div>${avisos}${transcricao}
     <div class="linha-acoes">${htmlAcoes(d)}</div>
   </div>`;
   trocar(p, cab + htmlPassos(d));
@@ -474,14 +502,18 @@ async function republicar(id: string, sobrescrever = false): Promise<void> {
 
 document.addEventListener("click", async (ev) => {
   const alvo = ev.target as HTMLElement;
+  if (st.menu && !alvo.closest("[data-menu]") && !alvo.closest('[data-acao="menu"]')) {
+    st.menu = null; st.menuExcluir = false; renderLista();
+  }
   const li = alvo.closest<HTMLElement>("li[data-id]");
-  if (li) return selecionar(li.dataset.id!);
+  if (li && !alvo.closest("[data-acao]") && !alvo.closest("[data-menu]")) return selecionar(li.dataset.id!);
   const escolhida = alvo.closest<HTMLElement>("[data-escolher]");
   if (escolhida) return escolherImagem(escolhida.dataset.escolher!);
   const b = alvo.closest<HTMLElement>("[data-acao]");
   if (!b) return;
   ev.preventDefault();
   const id = st.det?.id ?? "";
+  const alvoId = b.dataset.id ?? id;
   switch (b.dataset.acao) {
     case "nova": return abrirTitulo();
     case "cancelar-titulo": $<HTMLDialogElement>("#titulo").close(); return;
@@ -489,7 +521,41 @@ document.addEventListener("click", async (ev) => {
     case "parar": return tentar(() => invoke("parar"));
     case "cancelar": return tentar(() => invoke("cancelar"));
     case "processar": return executar(id, () => invoke("processar", { id, refazer: false }));
-    case "reprocessar": return executar(id, () => invoke("processar", { id, refazer: true }));
+    case "menu":
+      ev.stopPropagation();
+      st.menu = st.menu === alvoId ? null : alvoId; st.menuExcluir = false;
+      return renderLista();
+    case "excluir-abrir": st.menuExcluir = !st.menuExcluir; return renderLista();
+    case "refazer-tudo": {
+      st.menu = null;
+      if (!(await perguntar("Isto transcreve de novo e reescreve o manual no mesmo documento. Trocas de imagem feitas no app se perdem. Continuar?"))) return renderLista();
+      delete st.avisoTranscricao[alvoId];
+      return executar(alvoId, (sobrescrever) => invoke("refazer_tudo", { id: alvoId, sobrescrever }));
+    }
+    case "retentar-audio": {
+      st.menu = null;
+      if (!(await perguntar("Transcrever o áudio de novo?"))) return renderLista();
+      const tinhaManual = ["draft", "published"].includes(st.sessoes.find((x) => x.id === alvoId)?.status ?? "");
+      await executar(alvoId, () => invoke("processar", { id: alvoId, refazer: true }));
+      if (tinhaManual && !st.aviso) { st.avisoTranscricao[alvoId] = true; render(); }
+      return;
+    }
+    case "excluir-local":
+    case "excluir-outline": {
+      const outline = b.dataset.acao === "excluir-outline";
+      const titulo = st.sessoes.find((x) => x.id === alvoId)?.title ?? "";
+      st.menu = null; st.menuExcluir = false;
+      const texto = outline
+        ? `Excluir a gravação "${titulo}" e mandar o documento para a lixeira do Outline?`
+        : `Excluir a gravação "${titulo}" deste computador? Prints, áudio e passos são apagados. O documento no Outline fica.`;
+      if (!(await perguntar(texto))) return renderLista();
+      document.querySelector(`li[data-id="${CSS.escape(alvoId)}"]`)?.classList.add("saindo");
+      await new Promise((r) => setTimeout(r, 150));
+      return tentar(async () => {
+        await invoke("excluir", { id: alvoId, outline });
+        if (st.sel === alvoId) { st.sel = null; st.det = null; }
+      });
+    }
     case "aprovar": {
       (b as HTMLButtonElement).disabled = true;
       try { await executar(id, () => invoke("aprovar", { id })); }
@@ -558,12 +624,14 @@ document.addEventListener("submit", async (ev) => {
     case "gerar": {
       const v = valorGerar();
       if (!v.colecao) { st.aviso = "Escolha onde publicar."; return render(); }
+      delete st.avisoTranscricao[id];
       return travar(f, () => executar(id, (sobrescrever) => invoke("gerar", { id, colecao: v.colecao, pai: v.pai, sobrescrever })));
     }
     case "melhoria": {
       if (st.det?.status === "published" &&
         !(await perguntar("Este manual já está publicado. A melhoria altera o documento publicado. Continuar?"))) return;
       const texto = s("texto");
+      delete st.avisoTranscricao[id];
       await travar(f, () => executar(id, (sobrescrever) => invoke("melhorar", { id, texto, sobrescrever })));
       if (!st.aviso && st.det?.id === id) limparForm("melhoria");
       return;

@@ -144,3 +144,16 @@ dialog#zoom { padding: 0; max-width: none; }
 .destino-item { padding: 6px 9px; border-radius: 9px; display: flex; gap: 6px; align-items: center; cursor: pointer; transition: background var(--rapido); }
 .destino-item:hover, .destino-item.realce { background: var(--realce); }
 mark { background: #ffe0d2; color: inherit; border-radius: 3px; }
+
+/* menu ⋯ da gravação */
+#lista li .pontos { opacity: 0; border: none; background: transparent; color: #6b6878; transition: opacity var(--rapido), background var(--rapido); }
+#lista li:hover .pontos, #lista li.sel .pontos, #lista li .pontos.on { opacity: 1; }
+.menu { right: 4px; top: 40px; width: 230px; display: flex; flex-direction: column; animation: entrar var(--rapido) ease-out; }
+.mi { border: none; background: transparent; border-radius: 9px; padding: 7px 9px; width: 100%; justify-content: flex-start; }
+.mi:hover { background: var(--realce); }
+.mi.perigo { color: var(--perigo); }
+.mi .fim { margin-left: auto; display: inline-flex; transition: transform var(--submenu); }
+.sub { overflow: hidden; max-height: 0; opacity: 0; transition: max-height var(--submenu) ease-out, opacity var(--submenu) ease-out; }
+.sub.aberto { max-height: 120px; opacity: 1; }
+.sub .mi { padding-left: 32px; font-size: 12px; }
+.sep { height: 1px; background: #f0eaf0; margin: 4px 6px; }
