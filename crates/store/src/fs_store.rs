@@ -332,6 +332,14 @@ impl SessionStore for FsStore {
         Ok(())
     }
 
+    fn delete(&self, id: &str) -> Result<()> {
+        let mut c = Path::new(id).components();
+        if !matches!((c.next(), c.next()), (Some(Component::Normal(_)), None)) {
+            bail!("sessão inválida: {id:?}");
+        }
+        remove_if_exists(&self.dir(id), |p| fs::remove_dir_all(p))
+    }
+
     fn facts(&self, id: &str) -> Result<SessionFacts> {
         Ok(SessionFacts {
             ended: self
@@ -677,5 +685,20 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("fora da pasta"));
+    }
+
+    #[test]
+    fn delete_apaga_a_pasta_e_recusa_caminhos_estranhos() {
+        let root = temp_root("delete");
+        let store = FsStore::new(&root);
+        store.create(&meta("s")).unwrap();
+        fs::write(root.join("s/x.txt"), "x").unwrap();
+        store.delete("s").unwrap();
+        assert!(!root.join("s").exists());
+        store.delete("s").unwrap(); // pasta que não existe mais: ok
+        assert!(store.delete("..").is_err());
+        assert!(store.delete("a/b").is_err());
+        assert!(store.delete("").is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 }

@@ -35,6 +35,9 @@ pub struct FakeDeps {
     pub baixados: Mutex<Vec<TranscriptionModel>>,
     /// `revision` do publish.json no início do último `run` do agente.
     pub revisao_vista: Arc<Mutex<Option<u64>>>,
+    /// Ids dos documentos que o Outline falso recebeu em `delete`.
+    pub excluidos: Arc<Mutex<Vec<String>>>,
+    pub outline_falha: Arc<AtomicBool>,
 }
 
 impl FakeDeps {
@@ -49,6 +52,8 @@ impl FakeDeps {
             plano: Mutex::new(Plano::Ok),
             baixados: Mutex::new(vec![]),
             revisao_vista: Arc::new(Mutex::new(None)),
+            excluidos: Arc::default(),
+            outline_falha: Arc::default(),
         }
     }
 }
@@ -98,6 +103,8 @@ impl Deps for FakeDeps {
         }
         Ok(FakeWiki {
             remota: self.remota.clone(),
+            excluidos: self.excluidos.clone(),
+            outline_falha: self.outline_falha.clone(),
         })
     }
     fn agent(&self, _cfg: &AppConfig, _token: &str, cancel: Arc<AtomicBool>) -> Result<FakeAgent> {
@@ -178,6 +185,8 @@ impl Imaging for FakeImaging {
 
 pub struct FakeWiki {
     remota: Arc<AtomicU64>,
+    excluidos: Arc<Mutex<Vec<String>>>,
+    outline_falha: Arc<AtomicBool>,
 }
 
 fn doc(id: &str, revision: u64) -> DocInfo {
@@ -231,6 +240,13 @@ impl Wiki for FakeWiki {
     }
     fn download_attachment(&self, _id: &str) -> PortResult<Vec<u8>> {
         bail!("não usado")
+    }
+    fn delete(&self, id: &str) -> PortResult<()> {
+        if self.outline_falha.load(SeqCst) {
+            bail!("o Outline não respondeu");
+        }
+        self.excluidos.lock().unwrap().push(id.to_string());
+        Ok(())
     }
 }
 

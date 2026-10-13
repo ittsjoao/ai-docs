@@ -41,6 +41,8 @@ pub trait SessionStore {
     fn save_respostas(&self, id: &str, respostas: &Respostas) -> PortResult<()>;
     /// Apaga perguntas.json e respostas.json.
     fn clear_perguntas(&self, id: &str) -> PortResult<()>;
+    /// Apaga a pasta da sessão. Pasta inexistente conta como ok.
+    fn delete(&self, id: &str) -> PortResult<()>;
     /// Contrato que o adapter de disco (plano 03) deve reproduzir:
     /// `ended` = events.jsonl contém um evento `session_end`; `has_candidates` = candidates.json existe;
     /// `publish` = conteúdo de publish.json; `error` = mensagem gravada por `set_error`
@@ -147,6 +149,8 @@ pub trait Wiki {
     fn info(&self, id: &str) -> PortResult<DocInfo>;
     fn publish(&self, id: &str) -> PortResult<DocInfo>;
     fn download_attachment(&self, attachment_id: &str) -> PortResult<Vec<u8>>;
+    /// Manda o documento para a lixeira do Outline. Documento inexistente conta como ok.
+    fn delete(&self, id: &str) -> PortResult<()>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

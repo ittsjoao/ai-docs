@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use screenmanual_agent::LoginRequired;
 use screenmanual_core::commands::{
-    add_operator_image, answer_questions, approve, cancel_questions, generate_manual, image_path, improve_manual, process_session,
+    add_operator_image, answer_questions, approve, cancel_questions, delete_session, generate_manual, image_path, improve_manual, process_session,
     republish, set_step_image, start_recording, stop_recording, CommandError,
 };
 use screenmanual_core::domain::{
@@ -854,6 +854,22 @@ impl<D: Deps> App<D> {
         cancel_questions(self.deps.store(), id)?;
         (self.emit)(Evento::Sessao { id: id.into() });
         Ok(())
+    }
+
+    /// Apaga a gravação; com `outline`, antes manda o documento para a lixeira do Outline.
+    pub fn excluir(&self, id: &str, outline: bool) -> Result<(), ApiError> {
+        validar_id(id)?;
+        let wiki = if outline {
+            let (cfg, token) = self.credenciais()?;
+            Some(self.deps.wiki(&cfg.outline_url, &token)?)
+        } else {
+            None
+        };
+        self.ocupar(id, Activity::Processing)?;
+        let r = delete_session(self.deps.store(), wiki.as_ref(), id).map_err(ApiError::from);
+        self.st().atividade.remove(id);
+        (self.emit)(Evento::Sessao { id: id.into() });
+        r
     }
 
     pub fn aprovar(&self, id: &str) -> Result<(), ApiError> {

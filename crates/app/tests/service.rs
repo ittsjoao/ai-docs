@@ -670,3 +670,48 @@ fn cancelar_perguntas_volta_a_pronta() {
     app.cancelar_perguntas(&id).unwrap();
     assert_eq!(status(&app, &id), SessionStatus::Ready);
 }
+
+#[test]
+fn excluir_so_local_tira_a_sessao_da_lista() {
+    let (app, rx) = app("excluir-local");
+    let id = pronta(&app, "Manual");
+    app.gerar(&id, "col", None, false).unwrap();
+    eventos(&rx);
+    app.excluir(&id, false).unwrap();
+    assert!(app.sessoes().unwrap().iter().all(|s| s.id != id));
+    assert!(!app.deps().store.dir(&id).exists());
+    assert!(app.deps().excluidos.lock().unwrap().is_empty(), "o Outline não foi tocado");
+    assert!(app.detalhe(&id).is_err(), "a UI recebe erro e limpa a seleção");
+    assert!(eventos(&rx).iter().any(|e| matches!(e, Evento::Sessao { .. })));
+}
+
+#[test]
+fn excluir_com_outline_manda_o_documento_para_a_lixeira() {
+    let (app, _rx) = app("excluir-outline");
+    let id = pronta(&app, "Manual");
+    app.gerar(&id, "col", None, false).unwrap();
+    app.excluir(&id, true).unwrap();
+    assert_eq!(*app.deps().excluidos.lock().unwrap(), vec!["doc".to_string()]);
+    assert!(!app.deps().store.dir(&id).exists());
+}
+
+#[test]
+fn excluir_com_outline_falhando_mantem_a_pasta() {
+    let (app, _rx) = app("excluir-falha");
+    let id = pronta(&app, "Manual");
+    app.gerar(&id, "col", None, false).unwrap();
+    app.deps().outline_falha.store(true, Ordering::SeqCst);
+    assert!(app.excluir(&id, true).is_err());
+    assert!(app.deps().store.dir(&id).exists());
+    assert_eq!(status(&app, &id), SessionStatus::Draft, "a reserva foi solta");
+}
+
+#[test]
+fn excluir_durante_gravacao_e_ocupado() {
+    let (app, _rx) = app("excluir-ocupado");
+    let id = app.gravar("A", QUANDO).unwrap();
+    assert_eq!(app.excluir(&id, false).unwrap_err().kind, "ocupado");
+    assert!(app.deps().store.dir(&id).exists());
+    app.parar().unwrap();
+    assert_eq!(app.excluir("..", false).unwrap_err().kind, "estado_invalido");
+}

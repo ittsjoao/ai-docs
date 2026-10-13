@@ -246,6 +246,7 @@ fn main() {
             commands::responder,
             commands::pular,
             commands::cancelar_perguntas,
+            commands::excluir,
             commands::abrir_link,
             commands::abrir_pasta,
             commands::fazer_login,

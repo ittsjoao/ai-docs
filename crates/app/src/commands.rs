@@ -248,6 +248,11 @@ pub async fn pular(st: St<'_>, id: String) -> Result<AgentOutcome, ApiError> {
 }
 
 #[tauri::command]
+pub async fn excluir(st: St<'_>, id: String, outline: bool) -> Result<(), ApiError> {
+    bloq(&st, move |a| a.excluir(&id, outline)).await
+}
+
+#[tauri::command]
 pub async fn cancelar_perguntas(st: St<'_>, id: String) -> Result<(), ApiError> {
     bloq(&st, move |a| a.cancelar_perguntas(&id)).await
 }

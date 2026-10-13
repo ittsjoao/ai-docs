@@ -1,3 +1,4 @@
+mod delete;
 mod error;
 mod generate;
 mod images;
@@ -5,6 +6,7 @@ mod process;
 mod publish;
 mod recording;
 
+pub use delete::delete_session;
 pub use error::{CommandError, CommandResult};
 pub use generate::{answer_questions, cancel_questions, generate_manual, improve_manual};
 pub use images::{add_operator_image, image_path, republish, set_step_image, MAX_IMAGEM};

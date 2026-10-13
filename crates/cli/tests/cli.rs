@@ -85,6 +85,10 @@ impl Wiki for FakeWiki {
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("anexo {id} não existe"))
     }
+    fn delete(&self, id: &str) -> PortResult<()> {
+        self.0.lock().unwrap().docs.remove(id);
+        Ok(())
+    }
 }
 
 const CANDIDATES: &str = r#"[{"id":"c001","t":1000,"kind":"click","app":"erp.exe","window":"ERP","url":null,"el":null,"input":null,"crop":"crops/c001.png","context_shot":null}]"#;

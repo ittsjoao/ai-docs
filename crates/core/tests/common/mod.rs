@@ -167,6 +167,10 @@ impl SessionStore for FakeStore {
         });
         Ok(())
     }
+    fn delete(&self, id: &str) -> Result<()> {
+        self.s.lock().unwrap().remove(id);
+        Ok(())
+    }
     fn facts(&self, id: &str) -> Result<SessionFacts> {
         let s = self.get(id);
         Ok(SessionFacts {
@@ -311,6 +315,8 @@ pub struct FakeWiki {
     pub created: Mutex<Vec<(Option<String>, String)>>,
     /// ícone de cada update
     pub updated_icons: Mutex<Vec<String>>,
+    pub deleted: Mutex<Vec<String>>,
+    pub fail_delete: Mutex<bool>,
 }
 
 impl FakeWiki {
@@ -404,6 +410,14 @@ impl Wiki for FakeWiki {
             .get(n - 1)
             .map(|u| u.1.clone())
             .ok_or_else(|| anyhow!("anexo não existe"))
+    }
+    fn delete(&self, id: &str) -> Result<()> {
+        if *self.fail_delete.lock().unwrap() {
+            return Err(anyhow!("o Outline não respondeu"));
+        }
+        self.docs.lock().unwrap().remove(id);
+        self.deleted.lock().unwrap().push(id.to_string());
+        Ok(())
     }
 }
 

@@ -101,6 +101,18 @@ pub(crate) fn http_failure(what: &str, status: u16, body: &str) -> String {
     format!("{what} falhou ({status}): {corpo}")
 }
 
+/// `documents.delete`: 2xx ok; 404 também (o documento já não existe).
+pub(crate) fn delete_result(status: u16, body: &Value) -> Result<()> {
+    match status {
+        200..=299 | 404 => Ok(()),
+        _ => bail!("{}", api_error("documents.delete", status, body)),
+    }
+}
+
+pub(crate) fn delete_body(id: &str) -> Value {
+    json!({ "id": id })
+}
+
 pub(crate) fn api_error(method: &str, status: u16, body: &Value) -> String {
     if status == 401 {
         return "token do Outline inválido ou expirado (OUTLINE_API_TOKEN)".to_string();
@@ -133,7 +145,8 @@ impl Outline {
         Self::new(&base, &token)
     }
 
-    fn post(&self, method: &str, body: Value) -> Result<Value> {
+    /// Status HTTP e corpo JSON, sem tratar erro de status.
+    fn post_raw(&self, method: &str, body: Value) -> Result<(u16, Value)> {
         let resp = self
             .http
             .post(format!("{}/api/{method}", self.base))
@@ -141,10 +154,14 @@ impl Outline {
             .json(&body)
             .send()
             .with_context(|| format!("falha ao acessar o Outline em {}", self.base))?;
-        let status = resp.status();
-        let json: Value = resp.json().unwrap_or(Value::Null);
-        if !status.is_success() {
-            bail!("{}", api_error(method, status.as_u16(), &json));
+        let status = resp.status().as_u16();
+        Ok((status, resp.json().unwrap_or(Value::Null)))
+    }
+
+    fn post(&self, method: &str, body: Value) -> Result<Value> {
+        let (status, json) = self.post_raw(method, body)?;
+        if !(200..300).contains(&status) {
+            bail!("{}", api_error(method, status, &json));
         }
         Ok(json["data"].clone())
     }
@@ -278,6 +295,11 @@ impl Wiki for Outline {
         }
         Ok(resp.bytes()?.to_vec())
     }
+
+    fn delete(&self, id: &str) -> PortResult<()> {
+        let (status, json) = self.post_raw("documents.delete", delete_body(id))?;
+        delete_result(status, &json)
+    }
 }
 
 #[cfg(test)]
@@ -373,6 +395,16 @@ mod tests {
                 name: "TI".into()
             }]
         );
+    }
+
+    #[test]
+    fn delete_vai_para_a_lixeira_e_404_conta_como_ok() {
+        assert_eq!(delete_body("d1"), json!({ "id": "d1" }), "sem permanent: vai para a lixeira");
+        assert!(delete_result(200, &json!({})).is_ok());
+        assert!(delete_result(404, &json!({"message": "not found"})).is_ok());
+        let e = delete_result(500, &json!({"message": "boom"})).unwrap_err().to_string();
+        assert!(e.contains("documents.delete") && e.contains("boom"), "{e}");
+        assert!(delete_result(401, &json!({})).unwrap_err().to_string().contains("token"));
     }
 
     #[test]
