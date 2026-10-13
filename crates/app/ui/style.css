@@ -104,8 +104,9 @@ form > button { align-self: flex-start; }
 
 /* popover (destino e menu ⋯) */
 .popover { position: absolute; z-index: 10; background: var(--vidro-forte); border-radius: 14px; padding: 6px; box-shadow: var(--sombra-pop);
-  opacity: 0; transform: translateY(-4px); pointer-events: none; transition: opacity var(--rapido) ease-out, transform var(--rapido) ease-out; }
-.popover.aberto { opacity: 1; transform: none; pointer-events: auto; }
+  opacity: 0; transform: translateY(-4px); pointer-events: none; visibility: hidden;
+  transition: opacity var(--rapido) ease-out, transform var(--rapido) ease-out, visibility var(--rapido); }
+.popover.aberto { opacity: 1; transform: none; pointer-events: auto; visibility: visible; }
 
 /* diálogos */
 dialog { border: none; border-radius: var(--r-cartao); padding: 18px; background: var(--vidro-forte); box-shadow: var(--sombra-pop); min-width: 380px; max-width: 640px; color: var(--texto); }
@@ -130,3 +131,16 @@ dialog#zoom { padding: 0; max-width: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* destino (combobox) */
+.destino { position: relative; }
+.destino-campo { width: 100%; justify-content: space-between; }
+.destino-caminho { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.destino-pop { left: 0; right: 0; top: calc(100% + 6px); max-height: 320px; display: flex; flex-direction: column; }
+.destino-busca { flex-direction: row; align-items: center; gap: 6px; background: #f4f1f6; border-radius: var(--r-pilula); padding: 2px 10px; margin-bottom: 6px; }
+.destino-busca input { border: none; background: transparent; flex: 1; padding: 6px 0; outline: none; }
+.destino-lista { overflow-y: auto; }
+.destino-col { font-weight: 600; padding: 6px 9px 2px; }
+.destino-item { padding: 6px 9px; border-radius: 9px; display: flex; gap: 6px; align-items: center; cursor: pointer; transition: background var(--rapido); }
+.destino-item:hover, .destino-item.realce { background: var(--realce); }
+mark { background: #ffe0d2; color: inherit; border-radius: 3px; }

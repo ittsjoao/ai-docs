@@ -2,6 +2,7 @@
 import type { Status, Modelo, Resumo, Detalhe, Inicio, PassoUi, ImagemUi, Colecao, DocNode, Config, ApiError, Perguntas, AgentResult, Evento } from "./tipos.js";
 import { icone, type NomeIcone } from "./icones.js";
 import { esc } from "./texto.js";
+import { montarDestino } from "./destino.js";
 
 const invoke = __TAURI__.core.invoke;
 
@@ -24,9 +25,8 @@ const st = {
   progresso: {} as Record<string, string>,
   download: {} as Partial<Record<Modelo, string>>,
   colecoes: [] as Colecao[],
-  arvores: {} as Record<string, DocNode[] | "carregando">,
-  colGerar: null as string | null,
-  colConfig: null as string | null,
+  destGerar: null as { colecao: string; pai: string | null } | null,
+  destConfig: null as { colecao: string; pai: string | null } | null,
   config: null as Config | null,
   aviso: "",
   login: false,
@@ -116,7 +116,7 @@ function lerRespostas(f: HTMLFormElement): { respostas: { id: string; escolhas: 
 
 async function selecionar(id: string): Promise<void> {
   st.sel = id;
-  st.colGerar = null;
+  st.destGerar = null;
   st.tela = "sessao";
   st.det = await invoke<Detalhe>("detalhe", { id });
   st.passos = st.det && (st.det.status === "draft" || st.det.status === "published")
@@ -264,9 +264,27 @@ function trocar(p: HTMLElement, html: string): void {
   }
 }
 
+const arvore = (colecao: string) => invoke<DocNode[]>("documentos", { colecao });
+
+function montarDestinos(): void {
+  const g = document.getElementById("destino-gerar");
+  if (g && st.det) {
+    const v = st.destGerar ?? {
+      colecao: st.det.colecao ?? st.config?.colecao_padrao ?? null,
+      pai: st.det.pai ?? (st.det.colecao ? null : st.config?.documento_padrao ?? null),
+    };
+    montarDestino(g, { colecoes: st.colecoes, arvore, valor: v, aoMudar: (x) => (st.destGerar = x) });
+  }
+  const c = document.getElementById("destino-config");
+  if (c && st.config) {
+    const v = st.destConfig ?? { colecao: st.config.colecao_padrao, pai: st.config.documento_padrao };
+    montarDestino(c, { colecoes: st.colecoes, arvore, valor: v, aoMudar: (x) => (st.destConfig = x) });
+  }
+}
+
 function renderPainel(): void {
   const p = $("#painel");
-  if (st.tela === "config") return trocar(p, `<div class="cartao">${htmlConfig()}</div>`);
+  if (st.tela === "config") { trocar(p, `<div class="cartao">${htmlConfig()}</div>`); return montarDestinos(); }
   const d = st.det;
   if (!d) return trocar(p, `<p class="vazio">Selecione uma gravação ou clique em ● Gravar.</p>`);
   const dur = d.duration_ms ? ` · ${Math.max(1, Math.round(d.duration_ms / 60000))} min` : "";
@@ -282,6 +300,7 @@ function renderPainel(): void {
     <div class="linha-acoes">${htmlAcoes(d)}</div>
   </div>`;
   trocar(p, cab + htmlPassos(d));
+  montarDestinos();
   carregarMiniaturas(p, d.id);
 }
 
@@ -313,49 +332,9 @@ function htmlAcoes(d: Detalhe): string {
   }
 }
 
-function opcoesColecao(sel: string | null): string {
-  return st.colecoes.map((c) => `<option value="${esc(c.id)}" ${c.id === sel ? "selected" : ""}>${esc(c.name)}</option>`).join("");
-}
-
-/** Carrega a árvore da coleção uma vez por abertura do app e re-renderiza. */
-function garantirArvore(colecao: string | null): void {
-  if (!colecao || st.arvores[colecao]) return;
-  st.arvores[colecao] = "carregando";
-  invoke<DocNode[]>("documentos", { colecao })
-    .then((a) => { st.arvores[colecao] = a; })
-    .catch((e: ApiError) => { st.arvores[colecao] = []; st.aviso = e.mensagem ?? String(e); })
-    .finally(render);
-}
-
-function opcoesPai(colecao: string | null, sel: string | null): string {
-  const arv = colecao ? st.arvores[colecao] : undefined;
-  if (arv === "carregando") return `<option value="">carregando…</option>`;
-  const nos: string[] = [];
-  const andar = (lista: DocNode[], nivel: number) => lista.forEach((n) => {
-    nos.push(`<option value="${esc(n.id)}" ${n.id === sel ? "selected" : ""}>${"— ".repeat(nivel)}${esc(n.title)}</option>`);
-    andar(n.children, nivel + 1);
-  });
-  andar(arv ?? [], 1);
-  return `<option value="">(raiz da coleção)</option>` + nos.join("");
-}
-
-function existeNaArvore(colecao: string | null, id: string | null): boolean {
-  const arv = colecao ? st.arvores[colecao] : undefined;
-  if (!id || !Array.isArray(arv)) return true;
-  const tem = (l: DocNode[]): boolean => l.some((n) => n.id === id || tem(n.children));
-  return tem(arv);
-}
-
 function formGerar(travado: string): string {
-  const colecao = st.colGerar ?? st.det?.colecao ?? st.config?.colecao_padrao ?? st.colecoes[0]?.id ?? null;
-  const pai = st.det?.pai ?? (colecao === st.config?.colecao_padrao ? st.config?.documento_padrao : null) ?? null;
-  garantirArvore(colecao);
-  const sumiu = !existeNaArvore(colecao, pai)
-    ? `<p class="aviso">${icone("circle-alert")} o documento padrão não existe mais no Outline; o manual vai para a raiz da coleção.</p>` : "";
-  return `<form data-form="gerar">
-    <label>Coleção do Outline <select name="colecao" required>${opcoesColecao(colecao)}</select></label>
-    <label>Dentro de <select name="pai">${opcoesPai(colecao, existeNaArvore(colecao, pai) ? pai : null)}</select></label>
-    ${sumiu}
+  return `<form data-form="gerar" class="melhoria">
+    <div id="destino-gerar" style="flex:1"></div>
     <button ${travado} class="primario">Gerar manual</button></form>`;
 }
 
@@ -369,7 +348,6 @@ function htmlConfig(): string {
   const c = st.config;
   const i = st.inicio;
   if (!c || !i) return "";
-  garantirArvore(st.colConfig ?? c.colecao_padrao);
   const titulo = i.configurado ? `<h2>Configurações</h2>` : `<h2>Bem-vindo ao screenManual</h2><p>Conecte o Outline para começar.</p>`;
   const modelos = MODELOS.map(([m, rotulo]) => {
     const baixado = i.modelos.find((x) => x.modelo === m)?.baixado;
@@ -384,8 +362,7 @@ function htmlConfig(): string {
     <button class="primario">Testar e salvar</button>
   </form>
   <form data-form="config">
-    <label>Destino padrão: coleção <select name="colecao"><option value="">—</option>${opcoesColecao(st.colConfig ?? c.colecao_padrao)}</select></label>
-    <label>Dentro de <select name="pai">${opcoesPai(st.colConfig ?? c.colecao_padrao, c.documento_padrao)}</select></label>
+    <label>Destino padrão <div id="destino-config"></div></label>
     <fieldset><legend>Transcrição</legend>${modelos}
       <label class="radio"><input type="checkbox" name="vocabulario" ${c.transcricao.vocabulario ? "checked" : ""}> Usar vocabulário da sessão (experimental)</label>
     </fieldset>
@@ -541,14 +518,6 @@ document.addEventListener("click", async (ev) => {
 
 document.addEventListener("change", (ev) => {
   const t = ev.target as HTMLInputElement;
-  if (t.name === "colecao") {
-    const form = t.closest("form")?.dataset.form;
-    if (form === "gerar") st.colGerar = t.value;
-    if (form === "config") st.colConfig = t.value || null;
-    garantirArvore(t.value || null);
-    renderPainel();
-    return;
-  }
   if (t.name === "modelo" && t.type === "radio") {
     baixar(t.value as Modelo);
     renderPainel();
@@ -584,9 +553,9 @@ document.addEventListener("submit", async (ev) => {
       return executar(sid, () => invoke("responder", { id: sid, respostas }));
     }
     case "gerar": {
-      const colecao = s("colecao");
-      const pai = s("pai") || null;
-      return travar(f, () => executar(id, (sobrescrever) => invoke("gerar", { id, colecao, pai, sobrescrever })));
+      const v = st.destGerar ?? { colecao: st.det?.colecao ?? st.config?.colecao_padrao ?? "", pai: st.det?.pai ?? null };
+      if (!v.colecao) { st.aviso = "Escolha onde publicar."; return render(); }
+      return travar(f, () => executar(id, (sobrescrever) => invoke("gerar", { id, colecao: v.colecao, pai: v.pai, sobrescrever })));
     }
     case "melhoria": {
       if (st.det?.status === "published" &&
@@ -606,13 +575,12 @@ document.addEventListener("submit", async (ev) => {
       });
     case "config": {
       const c = st.config!;
-      const col = s("colecao") || null;
-      // árvore ainda carregando (ou que falhou) não mostra o pai salvo: sem trocar de coleção, ele fica
-      if (col !== c.colecao_padrao || (col && Array.isArray(st.arvores[col]) && st.arvores[col].length))
-        c.documento_padrao = (col && s("pai")) || null;
-      c.colecao_padrao = col;
+      if (st.destConfig) {
+        c.colecao_padrao = st.destConfig.colecao;
+        c.documento_padrao = st.destConfig.pai;
+      }
+      st.destConfig = null;
       c.transcricao = { modelo: (s("modelo") || c.transcricao.modelo) as Modelo, vocabulario: v.has("vocabulario") };
-      st.colConfig = null;
       return tentar(async () => {
         await invoke("salvar_config", { cfg: c });
         st.aviso = "Configurações salvas.";

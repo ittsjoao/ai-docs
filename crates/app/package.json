@@ -1,9 +1,11 @@
 {
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "tsc -p .",
     "watch": "tsc -p . --watch",
-    "check": "tsc -p . --noEmit"
+    "check": "tsc -p . --noEmit",
+    "test": "tsc -p . && node ts-check/destino.check.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.0"
