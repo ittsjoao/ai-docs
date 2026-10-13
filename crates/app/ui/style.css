@@ -105,8 +105,8 @@ form > button { align-self: flex-start; }
 /* popover (destino e menu ⋯) */
 .popover { position: absolute; z-index: 10; background: var(--vidro-forte); border-radius: 14px; padding: 6px; box-shadow: var(--sombra-pop);
   opacity: 0; transform: translateY(-4px); pointer-events: none; visibility: hidden;
-  transition: opacity var(--rapido) ease-out, transform var(--rapido) ease-out, visibility var(--rapido); }
-.popover.aberto { opacity: 1; transform: none; pointer-events: auto; visibility: visible; }
+  transition: opacity var(--rapido) ease-out, transform var(--rapido) ease-out, visibility 0s linear var(--rapido); }
+.popover.aberto { opacity: 1; transform: none; pointer-events: auto; visibility: visible; transition-delay: 0s; }
 
 /* diálogos */
 dialog { border: none; border-radius: var(--r-cartao); padding: 18px; background: var(--vidro-forte); box-shadow: var(--sombra-pop); min-width: 380px; max-width: 640px; color: var(--texto); }

@@ -24,6 +24,20 @@ export interface OpcoesDestino {
 
 /** Cache das árvores por coleção durante a execução do app ("erro" = não carregou). */
 const arvores = new Map<string, DocNode[] | "erro">();
+/** Coleções com carga em andamento (evita pedir duas vezes quando o painel re-renderiza). */
+const carregando = new Set<string>();
+/** Popover aberto + termo, por raiz: sobrevive ao re-render do painel. */
+const estado = new Map<string, { aberto: boolean; termo: string }>();
+
+let escutando = false;
+const aoClicarFora = (e: MouseEvent) => {
+  document.querySelectorAll<HTMLElement>(".destino").forEach((r) => {
+    if (r.contains(e.target as Node)) return;
+    r.querySelector(".destino-pop")?.classList.remove("aberto");
+    const x = estado.get(r.id);
+    if (x) x.aberto = false;
+  });
+};
 
 function caminho(op: OpcoesDestino): string {
   const col = op.colecoes.find((c) => c.id === op.valor.colecao);
@@ -52,6 +66,7 @@ function marcar(titulo: string, termo: string): string {
 }
 
 export function montarDestino(raiz: HTMLElement, op: OpcoesDestino): void {
+  if (!escutando) { document.addEventListener("click", aoClicarFora); escutando = true; } // uma vez só; fora do import para o node carregar o módulo
   raiz.classList.add("destino");
   raiz.innerHTML = `<button type="button" class="campo destino-campo">${icone("folder")}<span class="destino-caminho">${caminho(op)}</span>${icone("chevron-down")}</button>
     <div class="popover destino-pop"><label class="destino-busca">${icone("search")}<input placeholder="Buscar coleção ou documento…"></label><div class="destino-lista"></div></div>`;
@@ -92,15 +107,20 @@ export function montarDestino(raiz: HTMLElement, op: OpcoesDestino): void {
   };
   const carregarTudo = () => {
     for (const c of op.colecoes) {
-      if (arvores.has(c.id)) continue;
+      if (arvores.has(c.id) || carregando.has(c.id)) continue;
+      carregando.add(c.id);
       op.arvore(c.id)
         .then((a) => arvores.set(c.id, a))
         .catch(() => arvores.set(c.id, "erro"))
-        .finally(() => { desenhar(); raiz.querySelector(".destino-caminho")!.innerHTML = caminho(op); });
+        .finally(() => { carregando.delete(c.id); desenhar(); raiz.querySelector(".destino-caminho")!.innerHTML = caminho(op); });
     }
   };
-  const abrir = () => { pop.classList.add("aberto"); realce = 0; busca.value = ""; carregarTudo(); desenhar(); busca.focus(); };
-  const fechar = () => pop.classList.remove("aberto");
+  const abrir = (termo = "") => {
+    pop.classList.add("aberto"); realce = 0; busca.value = termo;
+    estado.set(raiz.id, { aberto: true, termo });
+    carregarTudo(); desenhar(); busca.focus(); busca.setSelectionRange(termo.length, termo.length);
+  };
+  const fechar = () => { pop.classList.remove("aberto"); estado.set(raiz.id, { aberto: false, termo: "" }); };
   const escolher = (l: HTMLElement) => {
     op.valor = { colecao: l.dataset.col!, pai: l.dataset.pai || null };
     raiz.querySelector(".destino-caminho")!.innerHTML = caminho(op);
@@ -109,7 +129,7 @@ export function montarDestino(raiz: HTMLElement, op: OpcoesDestino): void {
   };
 
   campo.addEventListener("click", () => (pop.classList.contains("aberto") ? fechar() : abrir()));
-  busca.addEventListener("input", () => { realce = 0; desenhar(); });
+  busca.addEventListener("input", () => { realce = 0; estado.set(raiz.id, { aberto: true, termo: busca.value }); desenhar(); });
   busca.addEventListener("keydown", (e) => {
     const n = linhas().length;
     if (e.key === "ArrowDown") { realce = Math.min(realce + 1, n - 1); pintar(); e.preventDefault(); }
@@ -121,6 +141,7 @@ export function montarDestino(raiz: HTMLElement, op: OpcoesDestino): void {
     const l = (e.target as HTMLElement).closest<HTMLElement>("[data-col]");
     if (l) escolher(l);
   });
-  document.addEventListener("click", (e) => { if (!raiz.contains(e.target as Node)) fechar(); });
   if (op.valor.colecao) carregarTudo(); // para o caminho mostrar o documento pai salvo
+  const antes = estado.get(raiz.id);
+  if (antes?.aberto) abrir(antes.termo);
 }

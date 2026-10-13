@@ -266,14 +266,17 @@ function trocar(p: HTMLElement, html: string): void {
 
 const arvore = (colecao: string) => invoke<DocNode[]>("documentos", { colecao });
 
+function valorGerar(): { colecao: string | null; pai: string | null } {
+  return st.destGerar ?? {
+    colecao: st.det?.colecao ?? st.config?.colecao_padrao ?? null,
+    pai: st.det?.colecao ? (st.det.pai ?? null) : (st.config?.documento_padrao ?? null),
+  };
+}
+
 function montarDestinos(): void {
   const g = document.getElementById("destino-gerar");
   if (g && st.det) {
-    const v = st.destGerar ?? {
-      colecao: st.det.colecao ?? st.config?.colecao_padrao ?? null,
-      pai: st.det.pai ?? (st.det.colecao ? null : st.config?.documento_padrao ?? null),
-    };
-    montarDestino(g, { colecoes: st.colecoes, arvore, valor: v, aoMudar: (x) => (st.destGerar = x) });
+    montarDestino(g, { colecoes: st.colecoes, arvore, valor: valorGerar(), aoMudar: (x) => (st.destGerar = x) });
   }
   const c = document.getElementById("destino-config");
   if (c && st.config) {
@@ -362,7 +365,7 @@ function htmlConfig(): string {
     <button class="primario">Testar e salvar</button>
   </form>
   <form data-form="config">
-    <label>Destino padrão <div id="destino-config"></div></label>
+    <div class="destino-config-bloco"><p class="rotulo" style="margin:0 0 6px">Destino padrão</p><div id="destino-config"></div></div>
     <fieldset><legend>Transcrição</legend>${modelos}
       <label class="radio"><input type="checkbox" name="vocabulario" ${c.transcricao.vocabulario ? "checked" : ""}> Usar vocabulário da sessão (experimental)</label>
     </fieldset>
@@ -553,7 +556,7 @@ document.addEventListener("submit", async (ev) => {
       return executar(sid, () => invoke("responder", { id: sid, respostas }));
     }
     case "gerar": {
-      const v = st.destGerar ?? { colecao: st.det?.colecao ?? st.config?.colecao_padrao ?? "", pai: st.det?.pai ?? null };
+      const v = valorGerar();
       if (!v.colecao) { st.aviso = "Escolha onde publicar."; return render(); }
       return travar(f, () => executar(id, (sobrescrever) => invoke("gerar", { id, colecao: v.colecao, pai: v.pai, sobrescrever })));
     }
