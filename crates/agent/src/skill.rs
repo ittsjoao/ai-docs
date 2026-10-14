@@ -17,8 +17,10 @@ pub struct CustomSkill {
     pub dir: PathBuf,
 }
 
+/// Hash com o fim de linha normalizado: o `include_str!` muda de bytes entre checkouts LF e CRLF,
+/// e isso não pode marcar a cópia como desatualizada.
 fn sha256(s: &str) -> String {
-    format!("{:x}", Sha256::digest(s.as_bytes()))
+    format!("{:x}", Sha256::digest(s.replace("\r\n", "\n").as_bytes()))
 }
 
 impl CustomSkill {
@@ -36,7 +38,10 @@ impl CustomSkill {
 
     /// A personalizada, se existir; senão a embutida.
     pub fn content(&self) -> Result<String> {
-        match std::fs::read_to_string(self.file()) {
+        // Editores podem gravar BOM; antes de `---` o Claude não reconheceria a skill.
+        match std::fs::read_to_string(self.file())
+            .map(|s| s.strip_prefix('\u{FEFF}').map(str::to_string).unwrap_or(s))
+        {
             Ok(s) if s.contains(MARCA) => Ok(s),
             Ok(_) => bail!(
                 "skill personalizada inválida (falta `{MARCA}`); corrija ou restaure o padrão nas Configurações"
@@ -149,6 +154,19 @@ mod tests {
         let err = s.content().unwrap_err().to_string();
         assert!(err.contains("skill personalizada inválida"), "{err}");
         assert!(err.contains("restaure o padrão"), "{err}");
+    }
+
+    #[test]
+    fn hash_ignora_o_fim_de_linha() {
+        assert_eq!(sha256("a\r\nb"), sha256("a\nb"));
+    }
+
+    #[test]
+    fn content_ignora_bom_da_copia() {
+        let s = CustomSkill::new(temp("bom"));
+        let path = s.editar().unwrap();
+        std::fs::write(&path, format!("\u{FEFF}{SKILL}")).unwrap();
+        assert_eq!(s.content().unwrap(), SKILL);
     }
 
     #[test]
