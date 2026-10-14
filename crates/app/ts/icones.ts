@@ -9,7 +9,7 @@ export type NomeIcone = "circle-dot" | "file-video" | "loader" | "file-pen-line"
   | "message-circle-question" | "circle-alert" | "more-horizontal" | "refresh-cw" | "audio-lines"
   | "trash-2" | "chevron-down" | "chevron-right" | "settings" | "external-link" | "check"
   | "send-horizontal" | "image" | "image-plus" | "image-off" | "upload" | "x" | "search" | "folder"
-  | "file-text" | "pause" | "square";
+  | "file-text" | "pause" | "square" | "gauge";
 
 const SVG: Record<NomeIcone, string> = {
   "circle-dot": '<circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="1" />',
@@ -39,6 +39,7 @@ const SVG: Record<NomeIcone, string> = {
   "file-text": '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M10 9H8" /><path d="M16 13H8" /><path d="M16 17H8" />',
   "pause": '<rect x="14" y="4" width="4" height="16" rx="1" /><rect x="6" y="4" width="4" height="16" rx="1" />',
   "square": '<rect width="18" height="18" x="3" y="3" rx="2" />',
+  "gauge": '<path d="m12 14 4-4" /><path d="M3.34 19a10 10 0 1 1 17.32 0" />',
 };
 
 /** `<svg>` inline com a cor do texto em volta. */

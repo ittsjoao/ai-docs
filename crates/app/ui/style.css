@@ -160,6 +160,13 @@ dialog#zoom { padding: 0; max-width: none; }
 .destino-item { padding: 6px 9px; border-radius: 9px; display: flex; gap: 6px; align-items: center; cursor: pointer; transition: background var(--rapido); }
 .destino-item:hover, .destino-item.realce { background: var(--realce); }
 mark { background: #ffe0d2; color: inherit; border-radius: 3px; }
+/* escolha: mesmo campo e popover do destino, para listas curtas (modelo, desempenho) */
+.escolha-item { border: none; background: transparent; width: 100%; border-radius: 9px; padding: 7px 9px; }
+.escolha-item:hover, .escolha-item:focus-visible { background: var(--realce); outline: none; }
+.escolha-item .dica { margin-left: auto; }
+.escolha-check { visibility: hidden; color: #f0637a; }
+.escolha-item.sel .escolha-rotulo { font-weight: 600; }
+.escolha-item.sel .escolha-check { visibility: visible; }
 
 /* menu ⋯ da gravação */
 #lista li .pontos { opacity: 0; border: none; background: transparent; color: #6b6878; transition: opacity var(--rapido), background var(--rapido); }

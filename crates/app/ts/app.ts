@@ -3,6 +3,7 @@ import type { Status, Modelo, Desempenho, Resumo, Detalhe, Inicio, PassoUi, Imag
 import { icone, type NomeIcone } from "./icones.js";
 import { esc } from "./texto.js";
 import { montarDestino } from "./destino.js";
+import { htmlEscolha, ligarEscolhas, sincronizarEscolhas, type OpcaoEscolha } from "./escolha.js";
 import { ampliar, bloquearSoltarFora, ligarSoltar, ligarZoom } from "./galeria.js";
 
 const invoke = __TAURI__.core.invoke;
@@ -18,10 +19,10 @@ const MODELOS: [Modelo, string][] = [
   ["preciso", "Preciso (padrão)"],
 ];
 const TAMANHO: Record<Modelo, string> = { minimo: "~75 MB", rapido: "~490 MB", equilibrado: "~540 MB", preciso: "~575 MB" };
-const DESEMPENHOS: [Desempenho, string][] = [
-  ["baixo", "Baixo · 2 núcleos"],
-  ["medio", "Médio · metade dos núcleos (padrão)"],
-  ["alto", "Alto · todos os núcleos"],
+const DESEMPENHOS: OpcaoEscolha[] = [
+  { valor: "baixo", rotulo: "Baixo", detalhe: "2 núcleos" },
+  { valor: "medio", rotulo: "Médio (padrão)", detalhe: "metade dos núcleos" },
+  { valor: "alto", rotulo: "Alto", detalhe: "todos os núcleos" },
 ];
 
 const st = {
@@ -324,7 +325,11 @@ function montarDestinos(): void {
 
 function renderPainel(): void {
   const p = $("#painel");
-  if (st.tela === "config") { trocar(p, `<div class="cartao config">${htmlConfig()}</div>`); return montarDestinos(); }
+  if (st.tela === "config") {
+    trocar(p, `<div class="cartao config">${htmlConfig()}</div>`);
+    sincronizarEscolhas(p);
+    return montarDestinos();
+  }
   const d = st.det;
   if (!d) return trocar(p, `<p class="vazio">Selecione uma gravação ou clique em ● Gravar.</p>`);
   const dur = d.duration_ms ? ` · ${Math.max(1, Math.round(d.duration_ms / 60000))} min` : "";
@@ -397,17 +402,15 @@ function htmlConfig(): string {
   /** Uma linha da lista: nome e dica à esquerda, controle à direita. */
   const ajuste = (nome: string, dica: string, controle: string) =>
     `<div class="ajuste"><div class="nome">${nome}<p class="dica">${dica}</p></div><div class="ctl">${controle}</div></div>`;
-  const modelos = MODELOS.map(([m, nome]) => {
-    const estado = st.download[m] ? "baixando"
-      : i.modelos.find((x) => x.modelo === m)?.baixado ? "baixado" : `${TAMANHO[m]} a baixar`;
-    return `<option value="${m}" ${c.transcricao.modelo === m ? "selected" : ""}>${nome} · ${estado}</option>`;
-  }).join("");
+  const modelos = MODELOS.map(([m, nome]): OpcaoEscolha => ({
+    valor: m,
+    rotulo: nome,
+    detalhe: st.download[m] ? "baixando" : i.modelos.find((x) => x.modelo === m)?.baixado ? "baixado" : `${TAMANHO[m]} a baixar`,
+  }));
   const baixando = (Object.entries(st.download) as [Modelo, string][]).map(([m, pct]) => {
     const nome = MODELOS.find(([x]) => x === m)?.[1] ?? m;
     return `<p class="progresso">Baixando ${esc(nome)}… <progress max="100" value="${parseInt(pct, 10) || 0}"></progress> ${esc(pct)}</p>`;
   }).join("");
-  const desempenhos = DESEMPENHOS.map(([d, rotulo]) =>
-    `<option value="${d}" ${c.transcricao.desempenho === d ? "selected" : ""}>${rotulo}</option>`).join("");
   const sk = i.skill;
   const quando = sk.editada_em
     ? new Date(sk.editada_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).replace(",", "")
@@ -428,9 +431,9 @@ function htmlConfig(): string {
     ${ajuste("Destino padrão", "Onde o manual é publicado.", `<div id="destino-config"></div>`)}
     <p class="rotulo">Transcrição</p>
     ${ajuste("Modelo", "Mínimo é o mais rápido e erra mais; Preciso leva ~3,5 min por minuto de fala.",
-      `<select name="modelo">${modelos}</select>${baixando}`)}
+      `${htmlEscolha("modelo", "audio-lines", modelos, c.transcricao.modelo)}${baixando}`)}
     ${ajuste("Desempenho do PC", "Baixo deixa o PC livre; Alto transcreve mais rápido, mas pesa.",
-      `<select name="desempenho">${desempenhos}</select>`)}
+      htmlEscolha("desempenho", "gauge", DESEMPENHOS, c.transcricao.desempenho))}
     ${ajuste("Vocabulário da sessão", "Experimental: usa títulos de janela como dica.",
       `<label class="radio valor"><input type="checkbox" name="vocabulario" ${c.transcricao.vocabulario ? "checked" : ""}> Usar</label>`)}
     <p class="rotulo">Skill do manual</p>
@@ -498,6 +501,7 @@ $<HTMLDialogElement>("#imagens").addEventListener("paste", (e) => {
 });
 ligarZoom();
 bloquearSoltarFora();
+ligarEscolhas();
 ligarSoltar($("#soltar"), (f) => enviarArquivo(f), () => {
   st.aviso = "não é uma imagem PNG ou JPEG";
   $<HTMLDialogElement>("#imagens").close();
@@ -650,7 +654,7 @@ document.addEventListener("click", async (ev) => {
 
 document.addEventListener("change", (ev) => {
   const t = ev.target as HTMLInputElement;
-  if (t.name === "modelo" && t instanceof HTMLSelectElement) {
+  if (t.name === "modelo" && t.type === "hidden") {
     baixar(t.value as Modelo);
     renderPainel();
   }
