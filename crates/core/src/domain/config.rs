@@ -62,10 +62,22 @@ impl Default for CaptureConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TranscriptionModel {
+    /// tiny (spec 2026-10-14 §1): o mais rápido, erra mais termos.
+    Minimo,
     Rapido,
     Equilibrado,
     #[default]
     Preciso,
+}
+
+/// Quanto da CPU a transcrição usa (spec 2026-10-14 §2); a prioridade fica sempre normal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Desempenho {
+    Baixo,
+    #[default]
+    Medio,
+    Alto,
 }
 
 /// Bloco `transcricao` do config.json (spec §6.1 item 8).
@@ -75,6 +87,7 @@ pub struct TranscribeConfig {
     pub modelo: TranscriptionModel,
     /// Liga o initial_prompt com o vocabulário da sessão (experimental; spike achado 4).
     pub vocabulario: bool,
+    pub desempenho: Desempenho,
 }
 
 #[cfg(test)]
@@ -88,21 +101,35 @@ mod tests {
             d,
             TranscribeConfig {
                 modelo: TranscriptionModel::Preciso,
-                vocabulario: false
+                vocabulario: false,
+                desempenho: Desempenho::Medio,
             }
         );
-        let c: TranscribeConfig =
-            serde_json::from_str(r#"{"modelo":"rapido","vocabulario":true}"#).unwrap();
+        let c: TranscribeConfig = serde_json::from_str(
+            r#"{"modelo":"minimo","vocabulario":true,"desempenho":"baixo"}"#,
+        )
+        .unwrap();
         assert_eq!(
             c,
             TranscribeConfig {
-                modelo: TranscriptionModel::Rapido,
-                vocabulario: true
+                modelo: TranscriptionModel::Minimo,
+                vocabulario: true,
+                desempenho: Desempenho::Baixo,
             }
         );
         assert_eq!(
             serde_json::to_string(&TranscriptionModel::Equilibrado).unwrap(),
             "\"equilibrado\""
         );
+        assert_eq!(serde_json::to_string(&Desempenho::Alto).unwrap(), "\"alto\"");
+    }
+
+    #[test]
+    fn config_antiga_sem_desempenho_fica_no_medio() {
+        let c: TranscribeConfig =
+            serde_json::from_str(r#"{"modelo":"rapido","vocabulario":true}"#).unwrap();
+        assert_eq!(c.modelo, TranscriptionModel::Rapido);
+        assert!(c.vocabulario);
+        assert_eq!(c.desempenho, Desempenho::Medio);
     }
 }

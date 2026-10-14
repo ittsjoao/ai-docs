@@ -19,9 +19,13 @@ pub struct ModelInfo {
 
 const BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
 
-/// Tamanho e sha256 do repositório ggerganov/whisper.cpp no Hugging Face (consultado em 2026-10-04).
+/// Tamanho e sha256 do repositório ggerganov/whisper.cpp no Hugging Face (consultado em 2026-10-04; tiny em 2026-10-14).
 pub fn model_info(m: TranscriptionModel) -> ModelInfo {
     let (size, sha256) = match m {
+        TranscriptionModel::Minimo => (
+            77_691_713,
+            "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+        ),
         TranscriptionModel::Rapido => (
             487_601_967,
             "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
@@ -135,12 +139,13 @@ mod tests {
 
     #[test]
     fn catalog_matches_the_whisper_file_names() {
-        for m in [Rapido, Equilibrado, Preciso] {
+        for m in [Minimo, Rapido, Equilibrado, Preciso] {
             let i = model_info(m);
             assert_eq!(i.file, model_file(m));
             assert_eq!(i.sha256.len(), 64);
-            assert!(i.size > 400_000_000, "{}", i.file);
+            assert!(i.size > 30_000_000, "{}", i.file);
         }
+        assert_eq!(model_info(Minimo).size, 77_691_713);
         assert_eq!(model_info(Preciso).size, 574_041_195);
     }
 

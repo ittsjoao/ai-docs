@@ -46,6 +46,7 @@ impl WhisperTranscriber {
 /// Arquivo ggml de cada opção da tela de configurações (spec D11).
 pub fn model_file(m: TranscriptionModel) -> &'static str {
     match m {
+        TranscriptionModel::Minimo => "ggml-tiny.bin",
         TranscriptionModel::Rapido => "ggml-small.bin",
         TranscriptionModel::Equilibrado => "ggml-medium-q5_0.bin",
         TranscriptionModel::Preciso => "ggml-large-v3-turbo-q5_0.bin",
@@ -260,6 +261,7 @@ mod tests {
             &TranscribeConfig {
                 modelo: TranscriptionModel::Rapido,
                 vocabulario: true,
+                ..TranscribeConfig::default()
             },
         );
         assert_eq!(t.model, dir.join("ggml-small.bin"));
@@ -271,6 +273,7 @@ mod tests {
             model_file(TranscriptionModel::Equilibrado),
             "ggml-medium-q5_0.bin"
         );
+        assert_eq!(model_file(TranscriptionModel::Minimo), "ggml-tiny.bin");
     }
 
     #[test]
