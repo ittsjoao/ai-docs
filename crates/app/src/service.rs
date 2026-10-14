@@ -12,7 +12,8 @@ use screenmanual_core::commands::{
     start_recording, stop_recording, CommandError,
 };
 use screenmanual_core::domain::{
-    Activity, Perguntas, Respostas, SessionStatus, TranscribeConfig, TranscriptionModel,
+    Activity, Perguntas, Respostas, SessionStatus, SkillStatus, TranscribeConfig,
+    TranscriptionModel,
 };
 use screenmanual_core::ports::{
     AgentOutcome, AgentResult, Collection, DocNode, Imaging, ManualAgent, Recorder,
@@ -54,6 +55,12 @@ pub trait Deps: Send + Sync + 'static {
     ) -> anyhow::Result<Self::Agent>;
     fn token(&self) -> anyhow::Result<Option<String>>;
     fn save_token(&self, token: &str) -> anyhow::Result<()>;
+    /// Skill personalizada pelo operador (spec 2026-10-14 §3).
+    fn skill_status(&self) -> SkillStatus;
+    /// Cria a cópia personalizada se faltar e abre no editor.
+    fn editar_skill(&self) -> anyhow::Result<()>;
+    /// Apaga a cópia personalizada; a próxima geração usa a embutida.
+    fn restaurar_skill(&self) -> anyhow::Result<()>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -219,6 +226,7 @@ pub struct Inicio {
     pub gerando: Option<String>,
     pub modelo_atual: TranscriptionModel,
     pub modelos: Vec<ModeloStatus>,
+    pub skill: SkillStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -359,6 +367,7 @@ impl<D: Deps> App<D> {
             gerando: st.geracao.as_ref().map(|g| g.0.clone()),
             modelo_atual: cfg.transcricao.modelo,
             modelos: [
+                TranscriptionModel::Minimo,
                 TranscriptionModel::Rapido,
                 TranscriptionModel::Equilibrado,
                 TranscriptionModel::Preciso,
@@ -368,7 +377,16 @@ impl<D: Deps> App<D> {
                 baixado: self.deps.has_model(modelo),
             })
             .to_vec(),
+            skill: self.deps.skill_status(),
         })
+    }
+
+    pub fn editar_skill(&self) -> Result<(), ApiError> {
+        Ok(self.deps.editar_skill()?)
+    }
+
+    pub fn restaurar_skill(&self) -> Result<(), ApiError> {
+        Ok(self.deps.restaurar_skill()?)
     }
 
     pub fn sessoes(&self) -> Result<Vec<SessionSummary>, ApiError> {

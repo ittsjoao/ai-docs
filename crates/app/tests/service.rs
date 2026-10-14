@@ -9,7 +9,7 @@ use std::time::Duration;
 use fakes::*;
 use screenmanual_app::*;
 use screenmanual_core::commands::CommandError;
-use screenmanual_core::domain::{Respostas, SessionStatus, TranscriptionModel};
+use screenmanual_core::domain::{Respostas, SessionStatus, SkillStatus, TranscriptionModel};
 use screenmanual_core::ports::{AgentOutcome, SessionStore};
 use screenmanual_settings::AppConfig;
 
@@ -153,6 +153,17 @@ fn conectar_outline_grava_token_e_url_so_se_der_certo() {
 }
 
 #[test]
+fn skill_personalizada_aparece_no_inicio_e_volta_ao_padrao() {
+    let (app, _rx) = app("skill");
+    app.editar_skill().unwrap();
+    let s = app.inicio().unwrap().skill;
+    assert!(s.personalizada);
+    assert_eq!(*app.deps().skill_aberta.lock().unwrap(), 1);
+    app.restaurar_skill().unwrap();
+    assert_eq!(app.inicio().unwrap().skill, SkillStatus::default());
+}
+
+#[test]
 fn inicio_mostra_claude_ausente_e_modelos() {
     let (app, rx) = app("inicio");
     *app.deps().claude.lock().unwrap() = Err("Claude Code não encontrado".into());
@@ -162,6 +173,16 @@ fn inicio_mostra_claude_ausente_e_modelos() {
     assert_eq!(i.gravacao, EstadoGravacao::Parado);
     assert_eq!(i.modelo_atual, TranscriptionModel::Preciso);
     assert!(i.modelos.iter().all(|m| !m.baixado));
+    assert_eq!(
+        i.modelos.iter().map(|m| m.modelo).collect::<Vec<_>>(),
+        [
+            TranscriptionModel::Minimo,
+            TranscriptionModel::Rapido,
+            TranscriptionModel::Equilibrado,
+            TranscriptionModel::Preciso
+        ]
+    );
+    assert_eq!(i.skill, SkillStatus::default());
 
     app.baixar_modelo(TranscriptionModel::Rapido).unwrap();
     assert!(app

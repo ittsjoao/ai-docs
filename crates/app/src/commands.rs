@@ -79,6 +79,16 @@ pub async fn baixar_modelo(st: St<'_>, modelo: TranscriptionModel) -> Result<(),
 }
 
 #[tauri::command]
+pub async fn editar_skill(st: St<'_>) -> Result<(), ApiError> {
+    bloq(&st, |a| a.editar_skill()).await
+}
+
+#[tauri::command]
+pub async fn restaurar_skill(st: St<'_>) -> Result<(), ApiError> {
+    bloq(&st, |a| a.restaurar_skill()).await
+}
+
+#[tauri::command]
 pub async fn gravar(st: St<'_>, titulo: String, quando: String) -> Result<String, ApiError> {
     bloq(&st, move |a| a.gravar(&titulo, &quando)).await
 }

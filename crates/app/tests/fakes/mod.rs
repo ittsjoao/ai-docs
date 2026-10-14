@@ -8,7 +8,7 @@ use anyhow::{bail, Result};
 use screenmanual_agent::LoginRequired;
 use screenmanual_app::Deps;
 use screenmanual_core::domain::{
-    CaptureConfig, CropSpec, Segment, TranscribeConfig, TranscriptionModel,
+    CaptureConfig, CropSpec, Segment, SkillStatus, TranscribeConfig, TranscriptionModel,
 };
 use screenmanual_core::ports::*;
 use screenmanual_settings::AppConfig;
@@ -42,6 +42,9 @@ pub struct FakeDeps {
     pub steps_antes: Arc<Mutex<Option<bool>>>,
     /// Quantas vezes o transcritor falso rodou.
     pub transcricoes: Arc<AtomicUsize>,
+    pub skill: Arc<Mutex<SkillStatus>>,
+    /// Quantas vezes o editor da skill foi aberto.
+    pub skill_aberta: Arc<Mutex<usize>>,
 }
 
 impl FakeDeps {
@@ -60,6 +63,8 @@ impl FakeDeps {
             outline_falha: Arc::default(),
             steps_antes: Arc::default(),
             transcricoes: Arc::default(),
+            skill: Arc::default(),
+            skill_aberta: Arc::default(),
         }
     }
 }
@@ -127,6 +132,22 @@ impl Deps for FakeDeps {
     }
     fn save_token(&self, token: &str) -> Result<()> {
         *self.token.lock().unwrap() = Some(token.to_string());
+        Ok(())
+    }
+    fn skill_status(&self) -> SkillStatus {
+        *self.skill.lock().unwrap()
+    }
+    fn editar_skill(&self) -> Result<()> {
+        *self.skill.lock().unwrap() = SkillStatus {
+            personalizada: true,
+            editada_em: Some(1),
+            desatualizada: false,
+        };
+        *self.skill_aberta.lock().unwrap() += 1;
+        Ok(())
+    }
+    fn restaurar_skill(&self) -> Result<()> {
+        *self.skill.lock().unwrap() = SkillStatus::default();
         Ok(())
     }
 }

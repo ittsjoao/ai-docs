@@ -4218,6 +4218,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "image",
+ "open",
  "screenmanual-agent",
  "screenmanual-capture",
  "screenmanual-core",

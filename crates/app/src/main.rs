@@ -227,6 +227,8 @@ fn main() {
             commands::colecoes,
             commands::documentos,
             commands::baixar_modelo,
+            commands::editar_skill,
+            commands::restaurar_skill,
             commands::gravar,
             commands::pausar,
             commands::marcar,

@@ -4,10 +4,10 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Result};
-use screenmanual_agent::{check_claude, find_claude, install_skill, ClaudeAgent};
+use screenmanual_agent::{check_claude, find_claude, install_skill, ClaudeAgent, CustomSkill};
 use screenmanual_app::Deps;
 use screenmanual_capture::WinRecorder;
-use screenmanual_core::domain::{TranscribeConfig, TranscriptionModel};
+use screenmanual_core::domain::{SkillStatus, TranscribeConfig, TranscriptionModel};
 use screenmanual_outline::Outline;
 use screenmanual_settings::{ensure_model, load_token, model_info, save_token, AppConfig, Paths};
 use screenmanual_store::{FsStore, ImageCrops};
@@ -22,6 +22,10 @@ pub struct RealDeps {
     claude: Result<String, String>,
     /// Pasta do screenmanual-cli.exe: a mesma do executável do app (sidecar no plano 07).
     cli_dir: PathBuf,
+    /// `%USERPROFILE%`, onde fica `.claude\skills\`.
+    home: PathBuf,
+    /// Cópia da skill do operador (spec 2026-10-14 §3).
+    skill: CustomSkill,
 }
 
 impl RealDeps {
@@ -33,7 +37,9 @@ impl RealDeps {
         let home =
             PathBuf::from(std::env::var_os("USERPROFILE").context("USERPROFILE não definida")?);
         let claude_exe = find_claude(&std::env::var_os("PATH").unwrap_or_default(), &home);
-        let claude = match (&claude_exe, install_skill(&home, screenmanual_agent::SKILL)) {
+        let skill = CustomSkill::new(paths.skill_dir());
+        let instalada = skill.content().and_then(|c| install_skill(&home, &c));
+        let claude = match (&claude_exe, instalada) {
             (_, Err(e)) => Err(format!("falha ao instalar a skill /gerar-manual: {e:#}")),
             (None, _) => Err("Claude Code não encontrado no PATH nem em ~/.local/bin".into()),
             (Some(exe), Ok(_)) => check_claude(exe).map_err(|e| format!("{e:#}")),
@@ -48,6 +54,8 @@ impl RealDeps {
             claude_exe,
             claude,
             cli_dir,
+            home,
+            skill,
         })
     }
 
@@ -96,6 +104,8 @@ impl Deps for RealDeps {
     }
     fn agent(&self, cfg: &AppConfig, token: &str, cancel: Arc<AtomicBool>) -> Result<ClaudeAgent> {
         self.claude.as_ref().map_err(|e| anyhow!("{e}"))?;
+        // a cada geração: a edição ou a restauração da skill vale sem reiniciar o app
+        install_skill(&self.home, &self.skill.content()?)?;
         let exe = self
             .claude_exe
             .clone()
@@ -121,5 +131,22 @@ impl Deps for RealDeps {
     }
     fn save_token(&self, token: &str) -> Result<()> {
         save_token(token)
+    }
+    fn skill_status(&self) -> SkillStatus {
+        self.skill.status()
+    }
+    fn editar_skill(&self) -> Result<()> {
+        let path = self.skill.editar()?;
+        // sem programa associado a .md o Windows recusa; o Bloco de Notas sempre existe
+        if open::that(&path).is_err() {
+            std::process::Command::new("notepad.exe")
+                .arg(&path)
+                .spawn()
+                .with_context(|| format!("falha ao abrir {}", path.display()))?;
+        }
+        Ok(())
+    }
+    fn restaurar_skill(&self) -> Result<()> {
+        self.skill.restaurar()
     }
 }
