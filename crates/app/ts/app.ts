@@ -403,7 +403,7 @@ function htmlConfig(): string {
     `<option value="${d}" ${c.transcricao.desempenho === d ? "selected" : ""}>${rotulo}</option>`).join("");
   const sk = i.skill;
   const quando = sk.editada_em
-    ? new Date(sk.editada_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    ? new Date(sk.editada_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).replace(",", "")
     : "";
   return `${titulo}
   <form data-form="outline">
@@ -706,6 +706,7 @@ document.addEventListener("submit", async (ev) => {
       }
       st.destConfig = null;
       c.transcricao = {
+        ...c.transcricao,
         modelo: (s("modelo") || c.transcricao.modelo) as Modelo,
         vocabulario: v.has("vocabulario"),
         desempenho: (s("desempenho") || c.transcricao.desempenho || "medio") as Desempenho,
