@@ -12,16 +12,16 @@ const STATUS: Record<Status, string> = {
   ready: "pronta", generating: "gerando…", awaiting: "aguardando respostas", draft: "rascunho", published: "publicado", error: "erro",
 };
 const MODELOS: [Modelo, string][] = [
-  ["minimo", "Mínimo — o mais rápido; erra mais termos"],
-  ["rapido", "Rápido — ~1 min de processamento por minuto de fala"],
-  ["equilibrado", "Equilibrado — ~2 min por minuto de fala"],
-  ["preciso", "Preciso — ~3,5 min por minuto de fala (padrão)"],
+  ["minimo", "Mínimo"],
+  ["rapido", "Rápido"],
+  ["equilibrado", "Equilibrado"],
+  ["preciso", "Preciso (padrão)"],
 ];
 const TAMANHO: Record<Modelo, string> = { minimo: "~75 MB", rapido: "~490 MB", equilibrado: "~540 MB", preciso: "~575 MB" };
 const DESEMPENHOS: [Desempenho, string][] = [
-  ["baixo", "Baixo — usa 2 núcleos; o PC fica livre, a transcrição demora mais"],
-  ["medio", "Médio — usa metade dos núcleos (padrão)"],
-  ["alto", "Alto — usa todos os núcleos; o mais rápido, o PC pode ficar lento enquanto transcreve"],
+  ["baixo", "Baixo · 2 núcleos"],
+  ["medio", "Médio · metade dos núcleos (padrão)"],
+  ["alto", "Alto · todos os núcleos"],
 ];
 
 const st = {
@@ -324,7 +324,7 @@ function montarDestinos(): void {
 
 function renderPainel(): void {
   const p = $("#painel");
-  if (st.tela === "config") { trocar(p, `<div class="cartao">${htmlConfig()}</div>`); return montarDestinos(); }
+  if (st.tela === "config") { trocar(p, `<div class="cartao config">${htmlConfig()}</div>`); return montarDestinos(); }
   const d = st.det;
   if (!d) return trocar(p, `<p class="vazio">Selecione uma gravação ou clique em ● Gravar.</p>`);
   const dur = d.duration_ms ? ` · ${Math.max(1, Math.round(d.duration_ms / 60000))} min` : "";
@@ -390,14 +390,21 @@ function htmlConfig(): string {
   const c = st.config;
   const i = st.inicio;
   if (!c || !i) return "";
-  const titulo = i.configurado ? `<h2>Configurações</h2>` : `<h2>Bem-vindo ao screenManual</h2><p>Conecte o Outline para começar.</p>`;
-  const modelos = MODELOS.map(([m, rotulo]) => {
-    const baixado = i.modelos.find((x) => x.modelo === m)?.baixado;
-    return `<option value="${m}" ${c.transcricao.modelo === m ? "selected" : ""}>${rotulo} (${baixado ? "baixado" : `${TAMANHO[m]} a baixar`})</option>`;
+  const voltar = i.configurado ? `<button type="button" data-acao="voltar">Voltar</button>` : "";
+  const cabecalho = i.configurado
+    ? `<div class="cabecalho"><h2>Configurações</h2>${voltar}</div>`
+    : `<div class="cabecalho"><div><h2>Bem-vindo ao screenManual</h2><p class="meta">Conecte o Outline para começar.</p></div></div>`;
+  /** Uma linha da lista: nome e dica à esquerda, controle à direita. */
+  const ajuste = (nome: string, dica: string, controle: string) =>
+    `<div class="ajuste"><div class="nome">${nome}<p class="dica">${dica}</p></div><div class="ctl">${controle}</div></div>`;
+  const modelos = MODELOS.map(([m, nome]) => {
+    const estado = st.download[m] ? "baixando"
+      : i.modelos.find((x) => x.modelo === m)?.baixado ? "baixado" : `${TAMANHO[m]} a baixar`;
+    return `<option value="${m}" ${c.transcricao.modelo === m ? "selected" : ""}>${nome} · ${estado}</option>`;
   }).join("");
   const baixando = (Object.entries(st.download) as [Modelo, string][]).map(([m, pct]) => {
-    const nome = MODELOS.find(([x]) => x === m)?.[1].split(" — ")[0] ?? m;
-    return `<p class="rotulo">Baixando ${nome}: ${pct} <progress max="100" value="${parseInt(pct, 10) || 0}"></progress></p>`;
+    const nome = MODELOS.find(([x]) => x === m)?.[1] ?? m;
+    return `<p class="progresso">Baixando ${esc(nome)}… <progress max="100" value="${parseInt(pct, 10) || 0}"></progress> ${esc(pct)}</p>`;
   }).join("");
   const desempenhos = DESEMPENHOS.map(([d, rotulo]) =>
     `<option value="${d}" ${c.transcricao.desempenho === d ? "selected" : ""}>${rotulo}</option>`).join("");
@@ -405,29 +412,31 @@ function htmlConfig(): string {
   const quando = sk.editada_em
     ? new Date(sk.editada_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).replace(",", "")
     : "";
-  return `${titulo}
+  const skill = `<span class="valor">${sk.personalizada ? `Personalizada${quando ? ` · editada ${esc(quando)}` : ""}` : "Padrão"}</span>
+    ${sk.personalizada && sk.desatualizada ? `<p class="aviso">${icone("circle-alert")} A skill padrão mudou numa atualização. Restaure e refaça suas alterações.</p>` : ""}
+    <div class="botoes"><button type="button" data-acao="editar-skill">Editar skill</button>${sk.personalizada ? `<button type="button" data-acao="restaurar-skill">Restaurar padrão</button>` : ""}</div>`;
+  return `${cabecalho}
   <form data-form="outline">
-    <label>URL do Outline <input name="url" value="${esc(c.outline_url)}" placeholder="https://wiki.suaempresa.com" required></label>
-    <label>Token de API <input name="token" type="password" placeholder="${i.configurado ? "deixe vazio para manter o atual" : "cole o token"}"></label>
-    <button class="primario">Testar e salvar</button>
+    <p class="rotulo">Outline</p>
+    ${ajuste("Endereço", "URL da wiki, sem barra no fim.",
+      `<input name="url" value="${esc(c.outline_url)}" placeholder="https://wiki.suaempresa.com" required>`)}
+    ${ajuste("Token de API", "Fica no Gerenciador de Credenciais.",
+      `<input name="token" type="password" placeholder="${i.configurado ? "deixe vazio para manter o atual" : "cole o token"}">
+      <div class="botoes"><button ${i.configurado ? "" : `class="primario"`}>Testar e salvar</button></div>`)}
   </form>
   <form data-form="config">
-    <div class="destino-config-bloco"><p class="rotulo" style="margin:0 0 6px">Destino padrão</p><div id="destino-config"></div></div>
-    <fieldset><legend>Transcrição</legend>
-      <label>Modelo <select name="modelo">${modelos}</select></label>${baixando}
-      <label>Desempenho do PC <select name="desempenho">${desempenhos}</select></label>
-      <label class="radio"><input type="checkbox" name="vocabulario" ${c.transcricao.vocabulario ? "checked" : ""}> Usar vocabulário da sessão (experimental)</label>
-    </fieldset>
-    <button class="primario">Salvar</button>
-    ${i.configurado ? `<button type="button" data-acao="voltar">Voltar</button>` : ""}
-  </form>
-  <fieldset><legend>Skill do manual</legend>
-    <p>Em uso: ${sk.personalizada ? `personalizada${quando ? ` (editada ${esc(quando)})` : ""}` : "padrão"}</p>
-    ${sk.personalizada && sk.desatualizada ? `<p><em>A skill padrão mudou numa atualização do app depois que você criou a sua cópia. Restaure o padrão e refaça suas alterações para receber as mudanças.</em></p>` : ""}
-    <button type="button" data-acao="editar-skill">Editar skill</button>
-    ${sk.personalizada ? `<button type="button" data-acao="restaurar-skill">Restaurar padrão</button>` : ""}
-    <p class="rotulo">Vale a partir da próxima geração.</p>
-  </fieldset>`;
+    ${ajuste("Destino padrão", "Onde o manual é publicado.", `<div id="destino-config"></div>`)}
+    <p class="rotulo">Transcrição</p>
+    ${ajuste("Modelo", "Mínimo é o mais rápido e erra mais; Preciso leva ~3,5 min por minuto de fala.",
+      `<select name="modelo">${modelos}</select>${baixando}`)}
+    ${ajuste("Desempenho do PC", "Baixo deixa o PC livre; Alto transcreve mais rápido, mas pesa.",
+      `<select name="desempenho">${desempenhos}</select>`)}
+    ${ajuste("Vocabulário da sessão", "Experimental: usa títulos de janela como dica.",
+      `<label class="radio valor"><input type="checkbox" name="vocabulario" ${c.transcricao.vocabulario ? "checked" : ""}> Usar</label>`)}
+    <p class="rotulo">Skill do manual</p>
+    ${ajuste("Em uso", "Vale a partir da próxima geração.", skill)}
+    <div class="rodape">${voltar}<button class="primario">Salvar</button></div>
+  </form>`;
 }
 
 // ---------- imagens do rascunho ----------

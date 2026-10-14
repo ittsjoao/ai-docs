@@ -95,6 +95,20 @@ form > button { align-self: flex-start; }
 .melhoria { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 260px; flex-direction: row; }
 .melhoria input { flex: 1; }
 
+/* configurações: lista de ajustes, nome e dica à esquerda, controle à direita */
+.config .cabecalho { margin-bottom: 6px; }
+.config form { gap: 0; }
+.ajuste { display: grid; grid-template-columns: minmax(150px, 210px) 1fr; gap: 6px 18px; padding: 12px 6px; border-top: 1px solid #f0eaf0; align-items: start; }
+.rotulo + .ajuste { border-top: none; }
+.ajuste .nome { font-weight: 600; padding-top: 8px; }
+.ajuste .dica { font-weight: 400; margin: 2px 0 0; }
+.ajuste .ctl { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ajuste .valor { padding-top: 8px; }
+.ajuste .aviso, .ajuste .progresso { margin: 0; }
+.ajuste .progresso { display: flex; gap: 8px; align-items: center; }
+.ajuste .botoes { display: flex; gap: 8px; flex-wrap: wrap; }
+.config .rodape { display: flex; justify-content: flex-end; gap: 8px; padding-top: 12px; border-top: 1px solid #f0eaf0; margin-top: 4px; }
+
 /* passos */
 .passo { display: flex; gap: 10px; align-items: center; padding: 7px; border-radius: 12px; transition: background var(--rapido); }
 .passo:hover { background: rgba(255, 255, 255, .8); }
