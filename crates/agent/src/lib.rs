@@ -1,4 +1,8 @@
 //! Adapter `ManualAgent`: roda o Claude Code headless (`claude -p`) na pasta da sessão (spec §7.2).
+mod skill;
+
+pub use skill::CustomSkill;
+
 use std::ffi::OsStr;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -13,7 +17,7 @@ use screenmanual_core::domain::Perguntas;
 use screenmanual_core::ports::{AgentMode, AgentOutcome, ManualAgent, PortResult};
 use serde_json::Value;
 
-/// Skill embutida; `install_skill` a grava em `~/.claude/skills/gerar-manual/` (spec §8).
+/// Skill embutida; `install_skill` grava ela ou a cópia do operador (`CustomSkill`) em ~/.claude/skills/gerar-manual/.
 pub const SKILL: &str = include_str!("../../../skill/gerar-manual/SKILL.md");
 
 /// Ferramentas liberadas (spec §7.2). `Write(...)` não libera escrita: a regra de arquivo é
@@ -46,15 +50,15 @@ impl std::fmt::Display for LoginRequired {
 
 impl std::error::Error for LoginRequired {}
 
-/// Grava a skill quando falta ou mudou (spec §8). Devolve `true` se gravou.
-pub fn install_skill(home: &Path) -> Result<bool> {
+/// Grava `content` como a skill quando falta ou mudou (spec §8). Devolve `true` se gravou.
+pub fn install_skill(home: &Path, content: &str) -> Result<bool> {
     let dir = home.join(".claude").join("skills").join("gerar-manual");
     let path = dir.join("SKILL.md");
-    if std::fs::read_to_string(&path).ok().as_deref() == Some(SKILL) {
+    if std::fs::read_to_string(&path).ok().as_deref() == Some(content) {
         return Ok(false);
     }
     std::fs::create_dir_all(&dir)?;
-    std::fs::write(&path, SKILL)?;
+    std::fs::write(&path, content)?;
     Ok(true)
 }
 
@@ -829,16 +833,20 @@ mod tests {
     fn skill_is_installed_only_when_it_changes() {
         assert!(SKILL.contains("name: gerar-manual"));
         let home = temp("skill");
-        assert!(install_skill(&home).unwrap());
+        assert!(install_skill(&home, SKILL).unwrap());
         let path = home
             .join(".claude")
             .join("skills")
             .join("gerar-manual")
             .join("SKILL.md");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), SKILL);
-        assert!(!install_skill(&home).unwrap());
-        std::fs::write(&path, "versão antiga").unwrap();
-        assert!(install_skill(&home).unwrap());
+        assert!(!install_skill(&home, SKILL).unwrap());
+        assert!(install_skill(&home, "name: gerar-manual\nminha").unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "name: gerar-manual\nminha"
+        );
+        assert!(install_skill(&home, SKILL).unwrap());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), SKILL);
     }
 

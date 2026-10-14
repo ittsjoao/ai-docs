@@ -33,7 +33,7 @@ impl RealDeps {
         let home =
             PathBuf::from(std::env::var_os("USERPROFILE").context("USERPROFILE não definida")?);
         let claude_exe = find_claude(&std::env::var_os("PATH").unwrap_or_default(), &home);
-        let claude = match (&claude_exe, install_skill(&home)) {
+        let claude = match (&claude_exe, install_skill(&home, screenmanual_agent::SKILL)) {
             (_, Err(e)) => Err(format!("falha ao instalar a skill /gerar-manual: {e:#}")),
             (None, _) => Err("Claude Code não encontrado no PATH nem em ~/.local/bin".into()),
             (Some(exe), Ok(_)) => check_claude(exe).map_err(|e| format!("{e:#}")),

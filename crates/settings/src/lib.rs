@@ -38,6 +38,11 @@ impl Paths {
     pub fn logs_dir(&self) -> PathBuf {
         self.data.join("logs")
     }
+
+    /// Cópia da skill personalizada pelo operador (spec 2026-10-14 §3).
+    pub fn skill_dir(&self) -> PathBuf {
+        self.data.join("skill")
+    }
 }
 
 /// `config.json`. Campo ausente = padrão, para o arquivo sobreviver a versões novas do app.
@@ -188,6 +193,7 @@ mod tests {
         );
         assert_eq!(p.models_dir(), PathBuf::from(r"C:\L\screenManual\models"));
         assert_eq!(p.logs_dir(), PathBuf::from(r"C:\L\screenManual\logs"));
+        assert_eq!(p.skill_dir(), PathBuf::from(r"C:\L\screenManual\skill"));
     }
 
     #[test]

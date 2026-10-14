@@ -8,6 +8,7 @@ rust-version.workspace = true
 screenmanual-core = { path = "../core" }
 anyhow.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 screenmanual-store = { path = "../store" }

@@ -81,7 +81,7 @@ fn main() -> Result<()> {
         );
     }
     let home = PathBuf::from(std::env::var_os("USERPROFILE").context("USERPROFILE não definida")?);
-    if install_skill(&home)? {
+    if install_skill(&home, screenmanual_agent::SKILL)? {
         println!(
             "skill /gerar-manual instalada em {}",
             home.join(".claude\\skills\\gerar-manual").display()

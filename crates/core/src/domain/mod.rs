@@ -6,6 +6,7 @@ mod manual;
 mod perguntas;
 mod publish;
 mod session;
+mod skill;
 mod status;
 mod transcript;
 
@@ -17,5 +18,6 @@ pub use manual::*;
 pub use perguntas::*;
 pub use publish::*;
 pub use session::*;
+pub use skill::*;
 pub use status::*;
 pub use transcript::*;
