@@ -38,11 +38,14 @@ impl RealDeps {
             PathBuf::from(std::env::var_os("USERPROFILE").context("USERPROFILE não definida")?);
         let claude_exe = find_claude(&std::env::var_os("PATH").unwrap_or_default(), &home);
         let skill = CustomSkill::new(paths.skill_dir());
-        let instalada = skill.content().and_then(|c| install_skill(&home, &c));
-        let claude = match (&claude_exe, instalada) {
-            (_, Err(e)) => Err(format!("falha ao instalar a skill /gerar-manual: {e:#}")),
-            (None, _) => Err("Claude Code não encontrado no PATH nem em ~/.local/bin".into()),
-            (Some(exe), Ok(_)) => check_claude(exe).map_err(|e| format!("{e:#}")),
+        // melhor esforço: a geração reinstala a skill e reporta o erro, então uma
+        // skill inválida não trava o app depois de "Restaurar padrão"
+        if let Err(e) = skill.content().and_then(|c| install_skill(&home, &c)) {
+            eprintln!("skill /gerar-manual não instalada na abertura: {e:#}");
+        }
+        let claude = match &claude_exe {
+            None => Err("Claude Code não encontrado no PATH nem em ~/.local/bin".into()),
+            Some(exe) => check_claude(exe).map_err(|e| format!("{e:#}")),
         };
         let cli_dir = std::env::current_exe()?
             .parent()
