@@ -1,5 +1,5 @@
 // UI do screenManual (adendo 2026-10-05): TS puro, sem framework; o Tauri vem em window.__TAURI__.
-import type { Status, Modelo, Resumo, Detalhe, Inicio, PassoUi, ImagemUi, Colecao, DocNode, Config, ApiError, Perguntas, AgentResult, Evento } from "./tipos.js";
+import type { Status, Modelo, Desempenho, Resumo, Detalhe, Inicio, PassoUi, ImagemUi, Colecao, DocNode, Config, ApiError, Perguntas, AgentResult, Evento } from "./tipos.js";
 import { icone, type NomeIcone } from "./icones.js";
 import { esc } from "./texto.js";
 import { montarDestino } from "./destino.js";
@@ -12,9 +12,16 @@ const STATUS: Record<Status, string> = {
   ready: "pronta", generating: "gerando…", awaiting: "aguardando respostas", draft: "rascunho", published: "publicado", error: "erro",
 };
 const MODELOS: [Modelo, string][] = [
+  ["minimo", "Mínimo — o mais rápido; erra mais termos"],
   ["rapido", "Rápido — ~1 min de processamento por minuto de fala"],
   ["equilibrado", "Equilibrado — ~2 min por minuto de fala"],
   ["preciso", "Preciso — ~3,5 min por minuto de fala (padrão)"],
+];
+const TAMANHO: Record<Modelo, string> = { minimo: "~75 MB", rapido: "~490 MB", equilibrado: "~540 MB", preciso: "~575 MB" };
+const DESEMPENHOS: [Desempenho, string][] = [
+  ["baixo", "Baixo — usa 2 núcleos; o PC fica livre, a transcrição demora mais"],
+  ["medio", "Médio — usa metade dos núcleos (padrão)"],
+  ["alto", "Alto — usa todos os núcleos; o mais rápido, o PC pode ficar lento enquanto transcreve"],
 ];
 
 const st = {
@@ -386,10 +393,18 @@ function htmlConfig(): string {
   const titulo = i.configurado ? `<h2>Configurações</h2>` : `<h2>Bem-vindo ao screenManual</h2><p>Conecte o Outline para começar.</p>`;
   const modelos = MODELOS.map(([m, rotulo]) => {
     const baixado = i.modelos.find((x) => x.modelo === m)?.baixado;
-    const pct = st.download[m];
-    const estado = pct ? `baixando ${pct} <progress max="100" value="${parseInt(pct, 10) || 0}"></progress>` : baixado ? "baixado" : "não baixado";
-    return `<label class="radio"><input type="radio" name="modelo" value="${m}" ${c.transcricao.modelo === m ? "checked" : ""}> ${rotulo} <em>(${estado})</em></label>`;
+    return `<option value="${m}" ${c.transcricao.modelo === m ? "selected" : ""}>${rotulo} (${baixado ? "baixado" : `${TAMANHO[m]} a baixar`})</option>`;
   }).join("");
+  const baixando = (Object.entries(st.download) as [Modelo, string][]).map(([m, pct]) => {
+    const nome = MODELOS.find(([x]) => x === m)?.[1].split(" — ")[0] ?? m;
+    return `<p class="rotulo">Baixando ${nome}: ${pct} <progress max="100" value="${parseInt(pct, 10) || 0}"></progress></p>`;
+  }).join("");
+  const desempenhos = DESEMPENHOS.map(([d, rotulo]) =>
+    `<option value="${d}" ${c.transcricao.desempenho === d ? "selected" : ""}>${rotulo}</option>`).join("");
+  const sk = i.skill;
+  const quando = sk.editada_em
+    ? new Date(sk.editada_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    : "";
   return `${titulo}
   <form data-form="outline">
     <label>URL do Outline <input name="url" value="${esc(c.outline_url)}" placeholder="https://wiki.suaempresa.com" required></label>
@@ -398,12 +413,21 @@ function htmlConfig(): string {
   </form>
   <form data-form="config">
     <div class="destino-config-bloco"><p class="rotulo" style="margin:0 0 6px">Destino padrão</p><div id="destino-config"></div></div>
-    <fieldset><legend>Transcrição</legend>${modelos}
+    <fieldset><legend>Transcrição</legend>
+      <label>Modelo <select name="modelo">${modelos}</select></label>${baixando}
+      <label>Desempenho do PC <select name="desempenho">${desempenhos}</select></label>
       <label class="radio"><input type="checkbox" name="vocabulario" ${c.transcricao.vocabulario ? "checked" : ""}> Usar vocabulário da sessão (experimental)</label>
     </fieldset>
     <button class="primario">Salvar</button>
     ${i.configurado ? `<button type="button" data-acao="voltar">Voltar</button>` : ""}
-  </form>`;
+  </form>
+  <fieldset><legend>Skill do manual</legend>
+    <p>Em uso: ${sk.personalizada ? `personalizada${quando ? ` (editada ${esc(quando)})` : ""}` : "padrão"}</p>
+    ${sk.personalizada && sk.desatualizada ? `<p><em>A skill padrão mudou numa atualização do app depois que você criou a sua cópia. Restaure o padrão e refaça suas alterações para receber as mudanças.</em></p>` : ""}
+    <button type="button" data-acao="editar-skill">Editar skill</button>
+    ${sk.personalizada ? `<button type="button" data-acao="restaurar-skill">Restaurar padrão</button>` : ""}
+    <p class="rotulo">Vale a partir da próxima geração.</p>
+  </fieldset>`;
 }
 
 // ---------- imagens do rascunho ----------
@@ -605,6 +629,10 @@ document.addEventListener("click", async (ev) => {
     case "link": return tentar(() => invoke("abrir_link", { url: b.dataset.url }));
     case "pasta": return tentar(() => invoke("abrir_pasta", { id }));
     case "login": return tentar(() => invoke("fazer_login"));
+    case "editar-skill": return tentar(() => invoke("editar_skill"));
+    case "restaurar-skill":
+      if (!(await perguntar("Descartar a skill personalizada e voltar à padrão?"))) return;
+      return tentar(() => invoke("restaurar_skill"));
     case "config": await abrirConfig(); return render();
     case "voltar": st.tela = "sessao"; st.destConfig = null; return render();
     case "fechar-aviso": st.aviso = ""; return render();
@@ -613,7 +641,7 @@ document.addEventListener("click", async (ev) => {
 
 document.addEventListener("change", (ev) => {
   const t = ev.target as HTMLInputElement;
-  if (t.name === "modelo" && t.type === "radio") {
+  if (t.name === "modelo" && t instanceof HTMLSelectElement) {
     baixar(t.value as Modelo);
     renderPainel();
   }
@@ -677,7 +705,11 @@ document.addEventListener("submit", async (ev) => {
         c.documento_padrao = st.destConfig.pai;
       }
       st.destConfig = null;
-      c.transcricao = { modelo: (s("modelo") || c.transcricao.modelo) as Modelo, vocabulario: v.has("vocabulario") };
+      c.transcricao = {
+        modelo: (s("modelo") || c.transcricao.modelo) as Modelo,
+        vocabulario: v.has("vocabulario"),
+        desempenho: (s("desempenho") || c.transcricao.desempenho || "medio") as Desempenho,
+      };
       return tentar(async () => {
         await invoke("salvar_config", { cfg: c });
         st.aviso = "Configurações salvas.";
