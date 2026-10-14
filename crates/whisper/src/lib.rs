@@ -2,4 +2,4 @@
 mod transcriber;
 mod wav;
 
-pub use transcriber::{model_file, WhisperTranscriber};
+pub use transcriber::{model_file, threads_for, WhisperTranscriber};

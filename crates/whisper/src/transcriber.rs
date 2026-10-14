@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context};
-use screenmanual_core::domain::{Segment, TranscribeConfig, TranscriptionModel, Word};
+use screenmanual_core::domain::{Desempenho, Segment, TranscribeConfig, TranscriptionModel, Word};
 use screenmanual_core::ports::{PortResult, Transcriber};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
@@ -21,7 +21,8 @@ pub(crate) struct RawSegment {
 
 pub struct WhisperTranscriber {
     pub model: PathBuf,
-    /// Spike: `min(8, núcleos lógicos)`; no i5-1235U, 11 threads ficou pior que 8.
+    /// Pelo perfil de desempenho (spec 2026-10-14 §2). No spike, em CPU híbrida, 11 threads
+    /// foram mais lentas que 8; o Alto usa todos os núcleos mesmo assim, por decisão do usuário.
     pub threads: usize,
     /// Spike (achado 4): o initial_prompt pode gerar lixo; fica desligado por padrão.
     pub use_prompt: bool,
@@ -29,14 +30,27 @@ pub struct WhisperTranscriber {
     pub min_rms: f32,
 }
 
+fn logical_cores() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+}
+
+/// Threads do whisper para cada perfil; nunca 0.
+pub fn threads_for(d: Desempenho, logical: usize) -> usize {
+    let n = logical.max(1);
+    match d {
+        Desempenho::Baixo => n.min(2),
+        Desempenho::Medio => (n / 2).max(1),
+        Desempenho::Alto => n,
+    }
+}
+
 impl WhisperTranscriber {
     pub fn new(model: PathBuf) -> Self {
-        let logical = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4);
         Self {
             model,
-            threads: logical.min(8),
+            threads: threads_for(Desempenho::default(), logical_cores()),
             use_prompt: false,
             min_rms: 0.005,
         }
@@ -58,6 +72,7 @@ impl WhisperTranscriber {
     pub fn from_config(models_dir: &Path, cfg: &TranscribeConfig) -> Self {
         let mut t = Self::new(models_dir.join(model_file(cfg.modelo)));
         t.use_prompt = cfg.vocabulario;
+        t.threads = threads_for(cfg.desempenho, logical_cores());
         t
     }
 }
@@ -186,6 +201,7 @@ impl Transcriber for WhisperTranscriber {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use screenmanual_core::domain::Desempenho;
 
     fn tok(text: &str, t0: i64, t1: i64) -> (Vec<u8>, i64, i64) {
         (text.as_bytes().to_vec(), t0, t1)
@@ -277,9 +293,44 @@ mod tests {
     }
 
     #[test]
+    fn perfil_vira_threads() {
+        use screenmanual_core::domain::Desempenho::*;
+        assert_eq!(
+            [Baixo, Medio, Alto].map(|d| threads_for(d, 12)),
+            [2, 6, 12]
+        );
+        assert_eq!([Baixo, Medio, Alto].map(|d| threads_for(d, 4)), [2, 2, 4]);
+        assert_eq!([Baixo, Medio, Alto].map(|d| threads_for(d, 1)), [1, 1, 1]);
+        assert_eq!([Baixo, Medio, Alto].map(|d| threads_for(d, 0)), [1, 1, 1]);
+    }
+
+    #[test]
+    fn from_config_usa_o_perfil() {
+        use screenmanual_core::domain::{Desempenho, TranscribeConfig};
+        let logical = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+        let t = WhisperTranscriber::from_config(
+            Path::new("modelos"),
+            &TranscribeConfig {
+                desempenho: Desempenho::Baixo,
+                ..TranscribeConfig::default()
+            },
+        );
+        assert_eq!(t.threads, threads_for(Desempenho::Baixo, logical));
+        let t = WhisperTranscriber::from_config(
+            Path::new("modelos"),
+            &TranscribeConfig {
+                desempenho: Desempenho::Alto,
+                ..TranscribeConfig::default()
+            },
+        );
+        assert_eq!(t.threads, logical);
+    }
+
+    #[test]
     fn defaults_follow_the_spike() {
         let t = WhisperTranscriber::new(PathBuf::from("modelo.bin"));
-        assert!(t.threads >= 1 && t.threads <= 8);
+        let logical = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+        assert_eq!(t.threads, threads_for(Desempenho::Medio, logical));
         assert!(!t.use_prompt);
     }
 }
