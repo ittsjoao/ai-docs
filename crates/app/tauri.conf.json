@@ -26,7 +26,25 @@
     }
   },
   "bundle": {
-    "active": false,
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"]
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../../target/release/screenmanual-cli.exe": "screenmanual-cli.exe"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "PortugueseBR"
+        ]
+      }
+    }
   }
 }
